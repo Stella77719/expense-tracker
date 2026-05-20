@@ -1,0 +1,991 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="记账本">
+<title>记账本</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Outfit:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --cream: #FAF7F2;
+  --cream-dark: #F0EBE3;
+  --cream-deep: #E8E0D4;
+  --blue-1: #E8F2FA;
+  --blue-2: #C5DDEF;
+  --blue-3: #89BBD9;
+  --blue-4: #5A9EC4;
+  --blue-5: #3B7FA8;
+  --blue-6: #2A6080;
+  --ink: #2C3E50;
+  --ink-light: #5D7285;
+  --ink-faint: #8FA3B3;
+  --red: #D4726A;
+  --green: #6AB08B;
+  --amber: #D4A53C;
+  --card: rgba(255,255,255,.72);
+  --card-solid: #FFFFFF;
+  --shadow: 0 2px 16px rgba(42,96,128,.06);
+  --shadow-lg: 0 8px 32px rgba(42,96,128,.1);
+  --radius: 18px;
+  --radius-sm: 12px;
+  --font-cn: 'Noto Sans SC', 'PingFang SC', sans-serif;
+  --font-en: 'Outfit', sans-serif;
+  --font-display: 'DM Serif Display', serif;
+}
+
+* { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+html,body { height:100%; overflow:hidden; }
+body {
+  font-family: var(--font-cn);
+  background: var(--cream);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Texture overlay */
+body::before {
+  content:'';
+  position:fixed; top:0; left:0; right:0; bottom:0;
+  background-image: radial-gradient(circle at 20% 20%, var(--blue-1) 0%, transparent 50%),
+                    radial-gradient(circle at 80% 80%, var(--blue-1) 0%, transparent 40%);
+  pointer-events:none; z-index:0;
+}
+
+#app {
+  max-width:430px; margin:0 auto; height:100vh; height:100dvh;
+  display:flex; flex-direction:column; position:relative; z-index:1;
+}
+
+/* Scrollable content */
+.content { flex:1; overflow-y:auto; overflow-x:hidden; padding:0 16px 90px; scroll-behavior:smooth; }
+.content::-webkit-scrollbar { display:none; }
+
+/* Header */
+.header {
+  padding: 20px 20px 22px;
+  background: linear-gradient(135deg, var(--blue-5) 0%, var(--blue-4) 40%, var(--blue-3) 100%);
+  border-radius: 0 0 28px 28px;
+  color:#fff; position:relative; overflow:hidden;
+  box-shadow: 0 8px 32px rgba(58,127,168,.25);
+}
+.header::after {
+  content:''; position:absolute; top:-40px; right:-30px;
+  width:140px; height:140px; border-radius:50%;
+  background: rgba(255,255,255,.08);
+}
+.header::before {
+  content:''; position:absolute; bottom:-20px; left:-20px;
+  width:100px; height:100px; border-radius:50%;
+  background: rgba(255,255,255,.05);
+}
+.header-top { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:16px; position:relative; z-index:1; }
+.header-label { font-size:12px; opacity:.7; letter-spacing:1.5px; text-transform:uppercase; font-family:var(--font-en); font-weight:300; }
+.header-amount { font-size:28px; font-weight:700; font-family:var(--font-en); margin-top:4px; letter-spacing:-0.5px; }
+.header-sub { font-size:11px; opacity:.6; margin-top:2px; }
+.header-right { text-align:right; }
+.header-today-label { font-size:11px; opacity:.6; }
+.header-today-amount { font-size:20px; font-weight:600; font-family:var(--font-en); margin-top:2px; }
+
+/* Budget bar */
+.budget-bar-wrap { position:relative; z-index:1; }
+.budget-bar-info { display:flex; justify-content:space-between; font-size:11px; opacity:.7; margin-bottom:5px; }
+.budget-bar-info span:first-child { cursor:pointer; border-bottom:1px dashed rgba(255,255,255,.4); }
+.budget-track { height:5px; background:rgba(255,255,255,.18); border-radius:3px; overflow:hidden; }
+.budget-fill { height:100%; border-radius:3px; transition:width .6s cubic-bezier(.4,0,.2,1); }
+
+/* Cards */
+.card {
+  background: var(--card);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  box-shadow: var(--shadow);
+  border: 1px solid rgba(255,255,255,.5);
+}
+.card-title {
+  font-size:14px; font-weight:600; color:var(--ink); margin-bottom:12px;
+  display:flex; align-items:center; gap:6px;
+}
+.card + .card { margin-top:12px; }
+.section-gap { height:12px; }
+
+/* Inputs */
+input, textarea, select {
+  font-family: var(--font-cn);
+  border: 1.5px solid var(--cream-deep);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  font-size:14px;
+  outline:none;
+  transition: border-color .2s, box-shadow .2s;
+  background: var(--card-solid);
+  color: var(--ink);
+  width:100%;
+}
+input:focus, textarea:focus {
+  border-color: var(--blue-3);
+  box-shadow: 0 0 0 3px rgba(137,187,217,.15);
+}
+textarea { resize:vertical; min-height:100px; line-height:1.7; }
+input[type=number]::-webkit-inner-spin-button,
+input[type=number]::-webkit-outer-spin-button { -webkit-appearance:none; }
+input[type=number] { -moz-appearance:textfield; }
+
+/* Buttons */
+.btn {
+  border:none; border-radius:var(--radius-sm); padding:11px 20px;
+  font-family:var(--font-cn); font-size:14px; font-weight:600;
+  cursor:pointer; transition:all .2s; display:inline-flex; align-items:center; justify-content:center; gap:6px;
+}
+.btn-primary {
+  background: linear-gradient(135deg, var(--blue-5), var(--blue-4));
+  color:#fff; box-shadow: 0 4px 14px rgba(58,127,168,.25);
+}
+.btn-primary:active { transform:scale(.97); }
+.btn-primary:disabled { background:var(--cream-deep); color:var(--ink-faint); box-shadow:none; cursor:default; }
+.btn-secondary { background:var(--blue-1); color:var(--blue-5); }
+.btn-success { background:linear-gradient(135deg,var(--green),#5A9E7A); color:#fff; }
+.btn-ghost { background:transparent; color:var(--ink-light); border:1.5px solid var(--cream-deep); }
+.btn-block { width:100%; }
+.btn-sm { padding:7px 14px; font-size:13px; border-radius:10px; }
+
+/* Category pills */
+.cat-pill {
+  display:inline-flex; align-items:center; gap:4px;
+  padding:5px 12px; border-radius:20px;
+  font-size:13px; cursor:pointer; transition:all .15s;
+  border:1.5px solid var(--cream-deep);
+  background:var(--card-solid); color:var(--ink-light);
+}
+.cat-pill.active { border-color:var(--blue-3); background:var(--blue-1); color:var(--blue-5); font-weight:500; }
+.cat-pill-sm { padding:3px 8px; font-size:11px; }
+
+/* Entry row */
+.entry-row {
+  display:flex; align-items:center; gap:10px;
+  padding:10px 0; border-bottom:1px solid var(--cream-dark);
+  transition:background .15s;
+}
+.entry-row:last-child { border-bottom:none; }
+.entry-icon { font-size:22px; width:32px; text-align:center; flex-shrink:0; }
+.entry-info { flex:1; min-width:0; }
+.entry-desc { font-size:14px; color:var(--ink); font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.entry-meta { font-size:11px; color:var(--ink-faint); margin-top:1px; }
+.entry-amount { font-size:15px; font-weight:600; color:var(--red); font-family:var(--font-en); flex-shrink:0; }
+.entry-del { background:none; border:none; font-size:18px; color:var(--cream-deep); cursor:pointer; padding:4px; transition:color .15s; }
+.entry-del:active { color:var(--red); }
+
+/* Mini bar */
+.mini-bar-track { height:7px; background:var(--cream-dark); border-radius:4px; overflow:hidden; flex:1; }
+.mini-bar-fill { height:100%; border-radius:4px; transition:width .5s cubic-bezier(.4,0,.2,1); }
+
+/* SMS parsed item */
+.sms-item {
+  display:flex; align-items:center; gap:10px; padding:12px;
+  border-radius:var(--radius-sm); margin-bottom:8px; cursor:pointer;
+  transition:all .15s; border:1.5px solid var(--cream-deep); background:var(--card-solid);
+}
+.sms-item.selected { border-color:var(--green); background:#F0FAF4; }
+.sms-check {
+  width:22px; height:22px; border-radius:7px; display:flex; align-items:center; justify-content:center;
+  border:2px solid var(--cream-deep); font-size:13px; color:#fff; flex-shrink:0; transition:all .15s;
+}
+.sms-item.selected .sms-check { background:var(--green); border-color:var(--green); }
+
+/* Report table */
+.report-table { width:100%; border-collapse:separate; border-spacing:0; }
+.report-table th {
+  font-size:11px; font-weight:500; color:var(--ink-faint); text-align:left;
+  padding:8px 10px; border-bottom:1.5px solid var(--cream-deep);
+  text-transform:uppercase; letter-spacing:.5px; font-family:var(--font-en);
+}
+.report-table th:last-child, .report-table td:last-child { text-align:right; }
+.report-table td {
+  font-size:13px; padding:10px; border-bottom:1px solid var(--cream-dark);
+  color:var(--ink);
+}
+.report-table tr:last-child td { border-bottom:none; }
+.report-table .total-row td { font-weight:700; border-top:2px solid var(--blue-3); color:var(--blue-6); }
+
+/* Bar chart */
+.bar-chart { display:flex; align-items:flex-end; gap:4px; height:110px; padding-top:10px; }
+.bar-col { flex:1; display:flex; flex-direction:column; align-items:center; gap:3px; }
+.bar-rect {
+  width:100%; max-width:22px; border-radius:5px 5px 0 0; min-height:3px;
+  transition:height .4s cubic-bezier(.4,0,.2,1);
+}
+.bar-label { font-size:8px; color:var(--ink-faint); font-family:var(--font-en); }
+.bar-val { font-size:8px; color:var(--ink-light); font-family:var(--font-en); font-weight:500; }
+
+/* Stacked bar */
+.stacked-bar { display:flex; height:26px; border-radius:8px; overflow:hidden; }
+.stacked-bar > div { transition:width .5s cubic-bezier(.4,0,.2,1); display:flex; align-items:center; justify-content:center; font-size:11px; }
+
+/* Legend */
+.legend { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+.legend-item { display:flex; align-items:center; gap:4px; font-size:11px; color:var(--ink-light); }
+.legend-dot { width:9px; height:9px; border-radius:3px; flex-shrink:0; }
+
+/* Tabs */
+.tabs { display:flex; gap:4px; background:var(--cream-dark); border-radius:12px; padding:3px; margin-bottom:14px; }
+.tab {
+  flex:1; padding:8px 0; text-align:center; font-size:13px; font-weight:500;
+  border-radius:10px; cursor:pointer; transition:all .2s; color:var(--ink-light); border:none; background:none;
+  font-family:var(--font-cn);
+}
+.tab.active { background:var(--card-solid); color:var(--blue-5); box-shadow:0 2px 8px rgba(0,0,0,.06); font-weight:600; }
+
+/* Bottom nav */
+.bottom-nav {
+  position:fixed; bottom:0; left:50%; transform:translateX(-50%);
+  width:100%; max-width:430px;
+  background: rgba(255,255,255,.85);
+  backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px);
+  border-top:1px solid var(--cream-deep);
+  display:flex; justify-content:space-around;
+  padding:6px 0 max(10px, env(safe-area-inset-bottom));
+  z-index:100;
+}
+.nav-btn {
+  background:none; border:none; display:flex; flex-direction:column; align-items:center; gap:1px;
+  cursor:pointer; padding:4px 10px; font-family:var(--font-cn); position:relative;
+}
+.nav-icon { font-size:21px; transition:transform .15s; }
+.nav-btn.active .nav-icon { transform:scale(1.1); }
+.nav-label { font-size:10px; color:var(--ink-faint); transition:color .15s; }
+.nav-btn.active .nav-label { color:var(--blue-5); font-weight:600; }
+.nav-dot {
+  position:absolute; top:2px; right:8px;
+  width:5px; height:5px; border-radius:50%; background:var(--blue-4);
+  display:none;
+}
+.nav-btn.active .nav-dot { display:block; }
+
+/* Flash message */
+.flash {
+  position:fixed; top:20px; left:50%; transform:translateX(-50%);
+  background:var(--green); color:#fff; padding:8px 24px;
+  border-radius:24px; font-size:14px; font-weight:600; z-index:999;
+  box-shadow:0 4px 20px rgba(106,176,139,.35);
+  animation:flashIn .25s ease-out;
+}
+@keyframes flashIn { from { opacity:0; transform:translateX(-50%) translateY(-10px); } to { opacity:1; transform:translateX(-50%) translateY(0); } }
+
+/* Banner */
+.sms-banner {
+  background: linear-gradient(135deg, var(--blue-4) 0%, var(--blue-3) 100%);
+  border-radius: var(--radius); padding:16px 18px; cursor:pointer;
+  display:flex; align-items:center; gap:12px; color:#fff;
+  box-shadow: 0 4px 20px rgba(89,158,196,.2);
+  transition:transform .15s;
+}
+.sms-banner:active { transform:scale(.98); }
+
+/* How-to box */
+.howto {
+  background: var(--blue-1); border-radius:var(--radius-sm);
+  padding:14px 16px; border:1px solid var(--blue-2);
+}
+.howto-title { font-size:13px; font-weight:600; color:var(--blue-5); margin-bottom:6px; }
+.howto-text { font-size:12px; color:var(--blue-6); line-height:1.9; }
+
+/* Stat grid */
+.stat-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.stat-box {
+  background:var(--cream); border-radius:var(--radius-sm); padding:14px 16px; text-align:center;
+  border:1px solid var(--cream-deep);
+}
+.stat-label { font-size:11px; color:var(--ink-faint); margin-bottom:4px; }
+.stat-value { font-size:20px; font-weight:700; font-family:var(--font-en); }
+
+/* Budget edit */
+.budget-edit { display:flex; gap:8px; align-items:center; margin-top:10px; position:relative; z-index:1; }
+.budget-edit input { padding:7px 12px; border:none; border-radius:8px; font-size:14px; }
+
+/* Empty state */
+.empty { text-align:center; padding:28px 0; color:var(--ink-faint); font-size:13px; }
+
+/* Report selector */
+.report-period { display:flex; align-items:center; gap:8px; margin-bottom:12px; }
+.period-arrow { background:none; border:none; font-size:18px; cursor:pointer; color:var(--ink-light); padding:4px 8px; }
+.period-label { font-size:15px; font-weight:600; color:var(--ink); flex:1; text-align:center; font-family:var(--font-en); }
+
+/* Animations */
+.fade-in { animation: fadeIn .3s ease-out; }
+@keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+// ========== DATA & CONSTANTS ==========
+const CATEGORIES = [
+  { key:"food", label:"餐饮", icon:"🍜", color:"#D4726A" },
+  { key:"transport", label:"交通", icon:"🚇", color:"#5A9EC4" },
+  { key:"shopping", label:"购物", icon:"🛍️", color:"#D4A53C" },
+  { key:"entertainment", label:"娱乐", icon:"🎬", color:"#9B7ED8" },
+  { key:"housing", label:"住房", icon:"🏠", color:"#D4885A" },
+  { key:"education", label:"教育", icon:"📚", color:"#3B7FA8" },
+  { key:"health", label:"医疗", icon:"💊", color:"#C9688F" },
+  { key:"other", label:"其他", icon:"📦", color:"#8FA3B3" },
+];
+const CAT_MAP = Object.fromEntries(CATEGORIES.map(c=>[c.key,c]));
+
+const AUTO_RULES = [
+  { p:/奶茶|咖啡|星巴克|瑞幸|麦当劳|肯德基|外卖|美团|饿了么|午餐|晚餐|早餐|火锅|烧烤|饭|面|菜|食堂|零食|水果|超市|便利店|餐厅|食品/i, c:"food" },
+  { p:/地铁|公交|打车|滴滴|uber|加油|停车|高铁|火车|飞机|机票|油费|出租|铁路|航空|交通/i, c:"transport" },
+  { p:/淘宝|京东|拼多多|衣服|鞋|包|化妆|护肤|日用|数码|手机|电脑|天猫|苹果|apple|商城|百货/i, c:"shopping" },
+  { p:/电影|游戏|KTV|演出|门票|旅游|酒店|民宿|景点|影院|票务/i, c:"entertainment" },
+  { p:/房租|水电|物业|网费|维修|家具|装修|燃气|暖气/i, c:"housing" },
+  { p:/学费|书|课程|培训|考试|文具|打印|教育|学校/i, c:"education" },
+  { p:/医院|药|体检|看病|挂号|牙|诊所|健康/i, c:"health" },
+];
+function autoCat(d){ for(const r of AUTO_RULES) if(r.p.test(d)) return r.c; return "other"; }
+
+const SAMPLE_SMS = [
+  "【招商银行】您尾号8888的信用卡12月15日在星巴克消费人民币38.00元，当前可用额度52000.00元。",
+  "【建设银行】您尾号6666储蓄卡12月16日向美团外卖支付人民币45.50元，余额1234.56元。",
+  "【工商银行】您的账户于2025年12月17日在滴滴出行消费¥23.80，余额8888.00元。",
+];
+
+function parseSMS(text){
+  const results=[];
+  const blocks=text.split(/\n{2,}|\r\n{2,}/);
+  const parts=blocks.length>1?blocks:[text];
+  for(const block of parts){
+    const t=block.trim(); if(!t) continue;
+    let amount=null,merchant=null,dateStr=null;
+    const aP=[
+      /(?:金额|人民币|消费|支出|扣款|交易金额|付款)[^\d]*?([\d,]+\.?\d*)\s*元?/i,
+      /[¥￥]\s*([\d,]+\.?\d*)/,
+      /RMB\s*([\d,]+\.?\d*)/i,
+      /([\d,]+\.?\d*)\s*元/,
+    ];
+    for(const p of aP){ const m=t.match(p); if(m){ const v=parseFloat(m[1].replace(/,/g,"")); if(v>0&&v<1000000){amount=v;break;} } }
+    const mP=[
+      /(?:在|于|向|至|商户|摘要|对方|收款方|付给)[：:\s]*([^\d\s,，。！\n]{2,20})/,
+      /(?:交易|消费|支付|购买)[^\d]*?(?:在|于|向)[：:\s]*([^\d\s,，。\n]{2,20})/,
+    ];
+    for(const p of mP){ const m=t.match(p); if(m){merchant=m[1].trim().replace(/[，。、；]+$/,"");break;} }
+    if(!merchant){ const fb=t.match(/(?:消费|支付|扣款|交易)[^\n]*?(?:于|在)\s*([^\d\s,，。]{2,15})/); if(fb) merchant=fb[1].trim(); }
+    const dP=[/(\d{4})[年/\-.](\d{1,2})[月/\-.](\d{1,2})[日号]?/, /(\d{1,2})[月/](\d{1,2})[日号]?/];
+    for(const p of dP){ const m=t.match(p); if(m){ if(m.length>=4) dateStr=`${m[1]}-${m[2].padStart(2,"0")}-${m[3].padStart(2,"0")}`; else if(m.length>=3){ const y=new Date().getFullYear(); dateStr=`${y}-${m[1].padStart(2,"0")}-${m[2].padStart(2,"0")}`; } break; } }
+    if(amount) results.push({ amount, merchant:merchant||"未知商户", date:dateStr||today(), category:autoCat(merchant||t), raw:t.slice(0,80) });
+  }
+  return results;
+}
+
+// ========== UTILS ==========
+function today(){ return new Date().toISOString().slice(0,10); }
+function monthKey(d){ const x=new Date(d); return `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,"0")}`; }
+function yearKey(d){ return new Date(d).getFullYear().toString(); }
+function fmtMoney(n){ return n.toFixed(2); }
+function fmtDate(d){ const x=new Date(d); return `${x.getMonth()+1}/${x.getDate()}`; }
+function fmtMonth(mk){ const [y,m]=mk.split("-"); return `${y}年${parseInt(m)}月`; }
+function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,6); }
+
+const MONTHS_CN = ["1月","2月","3月","4月","5月","6月","7月","8月","9月","10月","11月","12月"];
+
+// ========== STORAGE ==========
+const SK="expense-tracker-v2";
+function loadData(){ try{ const d=localStorage.getItem(SK); return d?JSON.parse(d):{entries:[],budget:3000}; }catch(e){ return {entries:[],budget:3000}; } }
+function saveData(data){ try{ localStorage.setItem(SK,JSON.stringify(data)); }catch(e){} }
+
+// ========== STATE ==========
+let state = {
+  data: loadData(),
+  view: "home",
+  desc: "", amount: "", date: today(), category: null,
+  smsText: "", smsParsed: [], smsSelected: new Set(),
+  editBudget: false, budgetInput: "",
+  flash: null,
+  reportTab: "month", // month | year | category
+  reportMonth: monthKey(new Date()),
+  reportYear: new Date().getFullYear().toString(),
+};
+
+function setState(patch){ Object.assign(state, patch); render(); }
+function save(){ saveData(state.data); }
+
+// ========== RENDER ==========
+function h(tag, attrs, ...children){
+  const el=document.createElement(tag);
+  if(attrs) for(const[k,v] of Object.entries(attrs)){
+    if(k==="style"&&typeof v==="object"){ Object.assign(el.style,v); }
+    else if(k.startsWith("on")){ el.addEventListener(k.slice(2).toLowerCase(),v); }
+    else if(k==="className"){ el.className=v; }
+    else if(k==="htmlFor"){ el.setAttribute("for",v); }
+    else el.setAttribute(k,v);
+  }
+  for(const c of children.flat(Infinity)){
+    if(c==null||c===false) continue;
+    el.appendChild(typeof c==="string"||typeof c==="number" ? document.createTextNode(c) : c);
+  }
+  return el;
+}
+
+function render(){
+  const app=document.getElementById("app");
+  app.innerHTML="";
+
+  const {data,view}=state;
+  const curMonth=monthKey(new Date());
+  const mEntries=data.entries.filter(e=>monthKey(e.date)===curMonth);
+  const mTotal=mEntries.reduce((s,e)=>s+e.amount,0);
+  const tEntries=data.entries.filter(e=>e.date===today());
+  const tTotal=tEntries.reduce((s,e)=>s+e.amount,0);
+  const budgetPct=data.budget>0?mTotal/data.budget:0;
+
+  // Flash
+  if(state.flash){
+    app.appendChild(h("div",{className:"flash"},state.flash));
+  }
+
+  // Header
+  const header=h("div",{className:"header"},
+    h("div",{className:"header-top"},
+      h("div",null,
+        h("div",{className:"header-label"},"💰 记账本"),
+        h("div",{className:"header-amount"},"¥"+fmtMoney(mTotal)),
+        h("div",{className:"header-sub"},"本月支出"),
+      ),
+      h("div",{className:"header-right"},
+        h("div",{className:"header-today-label"},"今日"),
+        h("div",{className:"header-today-amount"},"¥"+fmtMoney(tTotal)),
+      ),
+    ),
+    h("div",{className:"budget-bar-wrap"},
+      h("div",{className:"budget-bar-info"},
+        h("span",{onClick:()=>setState({editBudget:true,budgetInput:String(data.budget)})},"预算: ¥"+data.budget),
+        h("span",{style:{color:budgetPct>1?"var(--red)":budgetPct>.8?"var(--amber)":"var(--green)"}}, Math.round(budgetPct*100)+"%"),
+      ),
+      h("div",{className:"budget-track"},
+        h("div",{className:"budget-fill",style:{width:Math.min(budgetPct,1)*100+"%",background:budgetPct>1?"var(--red)":budgetPct>.8?"var(--amber)":"var(--green)"}})
+      ),
+      state.editBudget ? h("div",{className:"budget-edit"},
+        h("input",{type:"number",value:state.budgetInput,onInput:e=>state.budgetInput=e.target.value,autofocus:"true"}),
+        h("button",{className:"btn btn-sm",style:{background:"var(--green)",color:"#fff"},onClick:()=>{
+          const v=Number(state.budgetInput); if(v>0) state.data.budget=v; save(); setState({editBudget:false});
+        }},"确定"),
+        h("button",{className:"btn btn-sm btn-ghost",style:{color:"#fff",borderColor:"rgba(255,255,255,.3)"},onClick:()=>setState({editBudget:false})},"取消"),
+      ) : null,
+    ),
+  );
+  app.appendChild(header);
+
+  // Content
+  const content=h("div",{className:"content fade-in"});
+
+  if(view==="home") renderHome(content,mEntries,tEntries,mTotal);
+  else if(view==="sms") renderSMS(content);
+  else if(view==="add") renderAdd(content);
+  else if(view==="report") renderReport(content);
+  else if(view==="list") renderList(content);
+
+  app.appendChild(content);
+
+  // Bottom nav
+  const navItems=[
+    {key:"home",icon:"🏠",label:"首页"},
+    {key:"sms",icon:"📩",label:"短信"},
+    {key:"add",icon:"➕",label:"记账"},
+    {key:"report",icon:"📊",label:"报表"},
+    {key:"list",icon:"📋",label:"明细"},
+  ];
+  const nav=h("div",{className:"bottom-nav"},
+    ...navItems.map(n=>
+      h("button",{className:"nav-btn"+(state.view===n.key?" active":""),onClick:()=>setState({view:n.key})},
+        h("span",{className:"nav-icon"},n.icon),
+        h("span",{className:"nav-label"},n.label),
+        h("span",{className:"nav-dot"}),
+      )
+    )
+  );
+  app.appendChild(nav);
+}
+
+// ========== VIEWS ==========
+
+function renderHome(el, mEntries, tEntries, mTotal){
+  // Quick add
+  const quickCard=h("div",{className:"card"},
+    h("div",{className:"card-title"},"⚡","快速记账"),
+    h("div",{style:{display:"flex",gap:"8px"}},
+      h("input",{placeholder:"描述（自动识别分类）",value:state.desc,style:{flex:"2"},onInput:e=>{state.desc=e.target.value;state.category=state.desc.trim()?autoCat(state.desc):null;}}),
+      h("input",{type:"number",placeholder:"¥",value:state.amount,style:{flex:"1",textAlign:"right"},onInput:e=>state.amount=e.target.value,
+        onKeydown:e=>{if(e.key==="Enter")addEntry();}
+      }),
+    ),
+    state.desc.trim() ? h("div",{style:{marginTop:"6px",fontSize:"12px",color:"var(--ink-faint)"}},
+      "自动分类: "+CAT_MAP[autoCat(state.desc)].icon+" "+CAT_MAP[autoCat(state.desc)].label
+    ) : null,
+    h("button",{className:"btn btn-primary btn-block",style:{marginTop:"10px"},disabled:!state.amount||isNaN(Number(state.amount)),onClick:addEntry},"记一笔"),
+  );
+  el.appendChild(quickCard);
+
+  // SMS banner
+  el.appendChild(h("div",{style:{height:"12px"}}));
+  el.appendChild(h("div",{className:"sms-banner",onClick:()=>setState({view:"sms"})},
+    h("span",{style:{fontSize:"26px"}},"📩"),
+    h("div",{style:{flex:"1"}},
+      h("div",{style:{fontSize:"14px",fontWeight:"700"}},"粘贴短信，自动记账"),
+      h("div",{style:{fontSize:"11px",opacity:".7",marginTop:"2px"}},"复制银行消费短信 → 一键识别"),
+    ),
+    h("span",{style:{opacity:".5",fontSize:"18px"}},"›"),
+  ));
+
+  // Today
+  el.appendChild(h("div",{style:{height:"12px"}}));
+  const todayCard=h("div",{className:"card"},
+    h("div",{className:"card-title"},"📅","今日记录"),
+    tEntries.length===0
+      ? h("div",{className:"empty"},"今天还没有记录~")
+      : h("div",null,...tEntries.map(e=>{
+          const c=CAT_MAP[e.category];
+          return h("div",{className:"entry-row"},
+            h("div",{className:"entry-icon"},c.icon),
+            h("div",{className:"entry-info"},
+              h("div",{className:"entry-desc"},e.desc),
+              h("div",{className:"entry-meta"},c.label),
+            ),
+            h("div",{className:"entry-amount"},"-¥"+fmtMoney(e.amount)),
+          );
+        })),
+  );
+  el.appendChild(todayCard);
+
+  // Category overview
+  const byCat={};
+  for(const e of mEntries) byCat[e.category]=(byCat[e.category]||0)+e.amount;
+  const sorted=Object.entries(byCat).sort((a,b)=>b[1]-a[1]);
+  if(sorted.length>0){
+    el.appendChild(h("div",{style:{height:"12px"}}));
+    const catCard=h("div",{className:"card"},
+      h("div",{className:"card-title"},"📊","本月分类"),
+      ...sorted.map(([k,v])=>{
+        const c=CAT_MAP[k];
+        return h("div",{style:{display:"flex",alignItems:"center",gap:"10px",marginBottom:"8px"}},
+          h("span",{style:{fontSize:"16px",width:"24px",textAlign:"center"}},c.icon),
+          h("span",{style:{fontSize:"12px",width:"36px",color:"var(--ink-light)"}},c.label),
+          h("div",{className:"mini-bar-track"},
+            h("div",{className:"mini-bar-fill",style:{width:(v/sorted[0][1]*100)+"%",background:c.color}}),
+          ),
+          h("span",{style:{fontSize:"13px",fontWeight:"600",minWidth:"65px",textAlign:"right",fontFamily:"var(--font-en)"}},"¥"+fmtMoney(v)),
+        );
+      }),
+    );
+    el.appendChild(catCard);
+  }
+}
+
+function renderSMS(el){
+  const card=h("div",{className:"card"},
+    h("div",{className:"card-title"},"📩","短信智能记账"),
+    h("div",{style:{fontSize:"12px",color:"var(--ink-faint)",marginBottom:"14px"}},"复制银行消费短信，粘贴到下方，自动提取金额、商户和日期"),
+    h("div",{className:"howto"},
+      h("div",{className:"howto-title"},"📱 使用方法"),
+      h("div",{className:"howto-text"},
+        "① 打开手机「信息」App",h("br"),
+        "② 长按银行消费通知短信 → 拷贝",h("br"),
+        "③ 粘贴到下方输入框",h("br"),
+        "④ 点击「解析短信」→ 确认 → 一键导入",
+      ),
+    ),
+    h("textarea",{placeholder:"在此粘贴银行消费短信...\n\n例如：\n【招商银行】您尾号8888的信用卡12月15日在星巴克消费人民币38.00元...",
+      value:state.smsText,
+      onInput:e=>{state.smsText=e.target.value;state.smsParsed=[];},
+      style:{marginTop:"14px"},
+    }),
+    h("div",{style:{display:"flex",gap:"8px",marginTop:"10px"}},
+      h("button",{className:"btn btn-primary",style:{flex:"1"},disabled:!state.smsText.trim(),
+        onClick:()=>{
+          const r=parseSMS(state.smsText);
+          setState({smsParsed:r,smsSelected:new Set(r.map((_,i)=>i))});
+        }
+      },"🔍 解析短信"),
+      h("button",{className:"btn btn-ghost",onClick:()=>{
+        setState({smsText:SAMPLE_SMS.join("\n\n"),smsParsed:[],smsSelected:new Set()});
+      }},"试试示例"),
+    ),
+  );
+  el.appendChild(card);
+
+  if(state.smsParsed.length>0){
+    el.appendChild(h("div",{style:{height:"12px"}}));
+    const rCard=h("div",{className:"card"},
+      h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"12px"}},
+        h("div",{className:"card-title",style:{marginBottom:"0"}},"✅","识别到 "+state.smsParsed.length+" 笔消费"),
+        h("span",{style:{fontSize:"12px",color:"var(--ink-faint)"}},"已选 "+state.smsSelected.size+" 笔"),
+      ),
+      ...state.smsParsed.map((r,i)=>{
+        const c=CAT_MAP[r.category];
+        const sel=state.smsSelected.has(i);
+        return h("div",{className:"sms-item"+(sel?" selected":""),onClick:()=>{
+          const s=new Set(state.smsSelected);
+          s.has(i)?s.delete(i):s.add(i);
+          setState({smsSelected:s});
+        }},
+          h("div",{className:"sms-check"},sel?"✓":""),
+          h("span",{style:{fontSize:"20px",flexShrink:"0"}},c.icon),
+          h("div",{style:{flex:"1",minWidth:"0"}},
+            h("div",{className:"entry-desc"},r.merchant),
+            h("div",{className:"entry-meta"},r.date+" · "+c.label),
+          ),
+          h("div",{className:"entry-amount",style:{flexShrink:"0"}},"-¥"+fmtMoney(r.amount)),
+        );
+      }),
+      h("button",{className:"btn btn-success btn-block",style:{marginTop:"8px"},
+        disabled:state.smsSelected.size===0,
+        onClick:()=>{
+          const toAdd=state.smsParsed.filter((_,i)=>state.smsSelected.has(i));
+          const newE=toAdd.map(r=>({id:uid(),desc:r.merchant,amount:r.amount,category:r.category,date:r.date,ts:Date.now()}));
+          state.data.entries=[...newE,...state.data.entries];
+          save();
+          showFlash("✅ 已导入 "+newE.length+" 笔");
+          setState({smsText:"",smsParsed:[],smsSelected:new Set()});
+        }
+      },"📥 导入 "+state.smsSelected.size+" 笔记录"),
+    );
+    el.appendChild(rCard);
+  }
+}
+
+function renderAdd(el){
+  const card=h("div",{className:"card"},
+    h("div",{className:"card-title"},"📝","记一笔"),
+    h("div",{style:{fontSize:"12px",color:"var(--ink-faint)",marginBottom:"4px"}},"描述"),
+    h("input",{placeholder:"例如：星巴克拿铁",value:state.desc,autofocus:"true",
+      onInput:e=>{state.desc=e.target.value;state.category=state.desc.trim()?autoCat(state.desc):null;}
+    }),
+    h("div",{style:{fontSize:"12px",color:"var(--ink-faint)",margin:"12px 0 4px"}},"金额"),
+    h("input",{type:"number",placeholder:"0.00",value:state.amount,style:{fontSize:"18px",fontWeight:"700"},
+      onInput:e=>state.amount=e.target.value}),
+    h("div",{style:{fontSize:"12px",color:"var(--ink-faint)",margin:"12px 0 4px"}},"日期"),
+    h("input",{type:"date",value:state.date,onInput:e=>state.date=e.target.value}),
+    h("div",{style:{fontSize:"12px",color:"var(--ink-faint)",margin:"12px 0 6px"}},
+      "分类",
+      state.desc.trim()?" （自动: "+CAT_MAP[autoCat(state.desc)].label+"）":"",
+    ),
+    h("div",{style:{display:"flex",flexWrap:"wrap",gap:"6px",marginBottom:"16px"}},
+      ...CATEGORIES.map(c=>
+        h("span",{className:"cat-pill"+(state.category===c.key?" active":""),
+          onClick:()=>{state.category=c.key;render();}
+        },c.icon," ",c.label)
+      ),
+    ),
+    h("button",{className:"btn btn-primary btn-block",disabled:!state.amount||isNaN(Number(state.amount)),
+      onClick:()=>{addEntry();setState({view:"home"});}
+    },"保存"),
+  );
+  el.appendChild(card);
+}
+
+function renderReport(el){
+  // Tabs
+  const tabs=h("div",{className:"tabs"},
+    h("button",{className:"tab"+(state.reportTab==="month"?" active":""),onClick:()=>setState({reportTab:"month"})},"月报表"),
+    h("button",{className:"tab"+(state.reportTab==="year"?" active":""),onClick:()=>setState({reportTab:"year"})},"年报表"),
+    h("button",{className:"tab"+(state.reportTab==="category"?" active":""),onClick:()=>setState({reportTab:"category"})},"分类报表"),
+  );
+  el.appendChild(tabs);
+
+  if(state.reportTab==="month") renderMonthReport(el);
+  else if(state.reportTab==="year") renderYearReport(el);
+  else renderCategoryReport(el);
+}
+
+function renderMonthReport(el){
+  const mk=state.reportMonth;
+  const entries=state.data.entries.filter(e=>monthKey(e.date)===mk);
+  const total=entries.reduce((s,e)=>s+e.amount,0);
+
+  // Period selector
+  el.appendChild(h("div",{className:"report-period"},
+    h("button",{className:"period-arrow",onClick:()=>{
+      const [y,m]=mk.split("-").map(Number);
+      const prev=m===1?`${y-1}-12`:`${y}-${String(m-1).padStart(2,"0")}`;
+      setState({reportMonth:prev});
+    }},"‹"),
+    h("div",{className:"period-label"},fmtMonth(mk)),
+    h("button",{className:"period-arrow",onClick:()=>{
+      const [y,m]=mk.split("-").map(Number);
+      const next=m===12?`${y+1}-01`:`${y}-${String(m+1).padStart(2,"0")}`;
+      setState({reportMonth:next});
+    }},"›"),
+  ));
+
+  // Stats
+  const daysInMonth=new Date(mk.split("-")[0],mk.split("-")[1],0).getDate();
+  const daysPassed=mk===monthKey(new Date())?new Date().getDate():daysInMonth;
+
+  el.appendChild(h("div",{className:"card"},
+    h("div",{className:"stat-grid"},
+      h("div",{className:"stat-box"},h("div",{className:"stat-label"},"总支出"),h("div",{className:"stat-value",style:{color:"var(--red)"}},"¥"+fmtMoney(total))),
+      h("div",{className:"stat-box"},h("div",{className:"stat-label"},"笔数"),h("div",{className:"stat-value"},String(entries.length))),
+      h("div",{className:"stat-box"},h("div",{className:"stat-label"},"日均"),h("div",{className:"stat-value"},"¥"+fmtMoney(daysPassed>0?total/daysPassed:0))),
+      h("div",{className:"stat-box"},h("div",{className:"stat-label"},"剩余预算"),h("div",{className:"stat-value",style:{color:state.data.budget-total>=0?"var(--green)":"var(--red)"}},"¥"+fmtMoney(state.data.budget-total))),
+    ),
+  ));
+
+  if(entries.length===0){ el.appendChild(h("div",{className:"card"},h("div",{className:"empty"},"该月暂无数据"))); return; }
+
+  // Daily trend bar chart
+  const dailyMap={};
+  for(const e of entries) dailyMap[e.date]=(dailyMap[e.date]||0)+e.amount;
+  const days=Object.entries(dailyMap).sort((a,b)=>a[0].localeCompare(b[0]));
+  const maxDay=Math.max(...days.map(d=>d[1]));
+
+  el.appendChild(h("div",{style:{height:"12px"}}));
+  el.appendChild(h("div",{className:"card"},
+    h("div",{className:"card-title"},"📈","每日消费"),
+    h("div",{className:"bar-chart"},
+      ...days.map(([d,v])=>
+        h("div",{className:"bar-col"},
+          h("div",{className:"bar-val"},v>maxDay*.25?"¥"+Math.round(v):""),
+          h("div",{className:"bar-rect",style:{height:(v/maxDay*80)+"px",background:"linear-gradient(to top, var(--blue-5), var(--blue-3))"}}),
+          h("div",{className:"bar-label"},fmtDate(d)),
+        )
+      ),
+    ),
+  ));
+
+  // Category breakdown table
+  const byCat={};
+  for(const e of entries) byCat[e.category]=(byCat[e.category]||0)+e.amount;
+  const sorted=Object.entries(byCat).sort((a,b)=>b[1]-a[1]);
+
+  el.appendChild(h("div",{style:{height:"12px"}}));
+  el.appendChild(h("div",{className:"card"},
+    h("div",{className:"card-title"},"📊","分类明细"),
+    // Stacked bar
+    h("div",{className:"stacked-bar"},
+      ...sorted.map(([k,v])=>h("div",{style:{width:(v/total*100)+"%",background:CAT_MAP[k].color,color:"#fff",fontWeight:"600"}},
+        v/total>.08?CAT_MAP[k].icon:""
+      )),
+    ),
+    h("div",{className:"legend"},
+      ...sorted.map(([k,v])=>h("div",{className:"legend-item"},
+        h("span",{className:"legend-dot",style:{background:CAT_MAP[k].color}}),
+        CAT_MAP[k].label+" "+Math.round(v/total*100)+"%",
+      )),
+    ),
+    h("div",{style:{height:"12px"}}),
+    h("table",{className:"report-table"},
+      h("thead",null,h("tr",null,h("th",null,"分类"),h("th",null,"笔数"),h("th",null,"金额"))),
+      h("tbody",null,
+        ...sorted.map(([k,v])=>{
+          const cnt=entries.filter(e=>e.category===k).length;
+          return h("tr",null,
+            h("td",null,CAT_MAP[k].icon+" "+CAT_MAP[k].label),
+            h("td",null,String(cnt)),
+            h("td",{style:{fontWeight:"600",fontFamily:"var(--font-en)"}},"¥"+fmtMoney(v)),
+          );
+        }),
+        h("tr",{className:"total-row"},h("td",null,"合计"),h("td",null,String(entries.length)),h("td",null,"¥"+fmtMoney(total))),
+      ),
+    ),
+  ));
+}
+
+function renderYearReport(el){
+  const yr=state.reportYear;
+
+  el.appendChild(h("div",{className:"report-period"},
+    h("button",{className:"period-arrow",onClick:()=>setState({reportYear:String(Number(yr)-1)})},"‹"),
+    h("div",{className:"period-label"},yr+"年"),
+    h("button",{className:"period-arrow",onClick:()=>setState({reportYear:String(Number(yr)+1)})},"›"),
+  ));
+
+  const entries=state.data.entries.filter(e=>yearKey(e.date)===yr);
+  const total=entries.reduce((s,e)=>s+e.amount,0);
+
+  // Monthly breakdown
+  const byMonth={};
+  for(let m=1;m<=12;m++) byMonth[String(m).padStart(2,"0")]=0;
+  for(const e of entries){
+    const m=new Date(e.date).getMonth();
+    byMonth[String(m+1).padStart(2,"0")]+=e.amount;
+  }
+  const monthArr=Object.entries(byMonth);
+  const maxMonth=Math.max(...monthArr.map(x=>x[1]),1);
+
+  el.appendChild(h("div",{className:"card"},
+    h("div",{className:"stat-grid"},
+      h("div",{className:"stat-box"},h("div",{className:"stat-label"},"年度总支出"),h("div",{className:"stat-value",style:{color:"var(--red)"}},"¥"+fmtMoney(total))),
+      h("div",{className:"stat-box"},h("div",{className:"stat-label"},"月均"),h("div",{className:"stat-value"},"¥"+fmtMoney(total/12))),
+      h("div",{className:"stat-box"},h("div",{className:"stat-label"},"总笔数"),h("div",{className:"stat-value"},String(entries.length))),
+      h("div",{className:"stat-box"},h("div",{className:"stat-label"},"笔均"),h("div",{className:"stat-value"},"¥"+fmtMoney(entries.length>0?total/entries.length:0))),
+    ),
+  ));
+
+  if(entries.length===0){ el.appendChild(h("div",{className:"card"},h("div",{className:"empty"},"该年暂无数据"))); return; }
+
+  // Monthly bar chart
+  el.appendChild(h("div",{style:{height:"12px"}}));
+  el.appendChild(h("div",{className:"card"},
+    h("div",{className:"card-title"},"📈","月度趋势"),
+    h("div",{className:"bar-chart"},
+      ...monthArr.map(([m,v])=>
+        h("div",{className:"bar-col"},
+          h("div",{className:"bar-val"},v>0?"¥"+Math.round(v):""),
+          h("div",{className:"bar-rect",style:{height:(v/maxMonth*80)+"px",background:v>0?"linear-gradient(to top, var(--blue-5), var(--blue-3))":"var(--cream-deep)"}}),
+          h("div",{className:"bar-label"},MONTHS_CN[parseInt(m)-1]),
+        )
+      ),
+    ),
+  ));
+
+  // Monthly table
+  el.appendChild(h("div",{style:{height:"12px"}}));
+  el.appendChild(h("div",{className:"card"},
+    h("div",{className:"card-title"},"📋","月度明细"),
+    h("table",{className:"report-table"},
+      h("thead",null,h("tr",null,h("th",null,"月份"),h("th",null,"笔数"),h("th",null,"金额"))),
+      h("tbody",null,
+        ...monthArr.filter(x=>x[1]>0).map(([m,v])=>{
+          const cnt=entries.filter(e=>String(new Date(e.date).getMonth()+1).padStart(2,"0")===m).length;
+          return h("tr",null,
+            h("td",null,parseInt(m)+"月"),
+            h("td",null,String(cnt)),
+            h("td",{style:{fontWeight:"600",fontFamily:"var(--font-en)"}},"¥"+fmtMoney(v)),
+          );
+        }),
+        h("tr",{className:"total-row"},h("td",null,"合计"),h("td",null,String(entries.length)),h("td",null,"¥"+fmtMoney(total))),
+      ),
+    ),
+  ));
+}
+
+function renderCategoryReport(el){
+  const entries=state.data.entries;
+  const total=entries.reduce((s,e)=>s+e.amount,0);
+  if(entries.length===0){ el.appendChild(h("div",{className:"card"},h("div",{className:"empty"},"暂无数据"))); return; }
+
+  const byCat={};
+  for(const c of CATEGORIES) byCat[c.key]={amount:0,count:0};
+  for(const e of entries){ byCat[e.category].amount+=e.amount; byCat[e.category].count++; }
+  const sorted=Object.entries(byCat).filter(x=>x[1].amount>0).sort((a,b)=>b[1].amount-a[1].amount);
+
+  // Donut-like visual using stacked bar
+  el.appendChild(h("div",{className:"card"},
+    h("div",{className:"card-title"},"📊","全部分类汇总"),
+    h("div",{className:"stat-grid",style:{marginBottom:"14px"}},
+      h("div",{className:"stat-box"},h("div",{className:"stat-label"},"累计总支出"),h("div",{className:"stat-value",style:{color:"var(--red)"}},"¥"+fmtMoney(total))),
+      h("div",{className:"stat-box"},h("div",{className:"stat-label"},"分类数"),h("div",{className:"stat-value"},String(sorted.length))),
+    ),
+    h("div",{className:"stacked-bar",style:{height:"30px",marginBottom:"2px"}},
+      ...sorted.map(([k,v])=>h("div",{style:{width:(v.amount/total*100)+"%",background:CAT_MAP[k].color,color:"#fff",fontWeight:"600"}},
+        v.amount/total>.08?CAT_MAP[k].icon:""
+      )),
+    ),
+    h("div",{className:"legend"},
+      ...sorted.map(([k,v])=>h("div",{className:"legend-item"},
+        h("span",{className:"legend-dot",style:{background:CAT_MAP[k].color}}),
+        CAT_MAP[k].label+" "+Math.round(v.amount/total*100)+"%",
+      )),
+    ),
+  ));
+
+  // Per-category detail cards
+  for(const [k,v] of sorted){
+    const c=CAT_MAP[k];
+    const catEntries=entries.filter(e=>e.category===k).sort((a,b)=>b.date.localeCompare(a.date));
+    const avg=v.count>0?v.amount/v.count:0;
+
+    // Monthly trend for this category
+    const byMonth={};
+    for(const e of catEntries){ const mk=monthKey(e.date); byMonth[mk]=(byMonth[mk]||0)+e.amount; }
+    const monthSorted=Object.entries(byMonth).sort((a,b)=>a[0].localeCompare(b[0])).slice(-6);
+    const maxM=Math.max(...monthSorted.map(x=>x[1]),1);
+
+    el.appendChild(h("div",{style:{height:"12px"}}));
+    el.appendChild(h("div",{className:"card"},
+      h("div",{style:{display:"flex",alignItems:"center",gap:"8px",marginBottom:"12px"}},
+        h("span",{style:{fontSize:"24px"}},c.icon),
+        h("div",{style:{flex:"1"}},
+          h("div",{style:{fontSize:"15px",fontWeight:"700",color:"var(--ink)"}},c.label),
+          h("div",{style:{fontSize:"11px",color:"var(--ink-faint)"}},v.count+"笔 · 占比"+Math.round(v.amount/total*100)+"%"),
+        ),
+        h("div",{style:{fontSize:"20px",fontWeight:"700",color:"var(--red)",fontFamily:"var(--font-en)"}},"¥"+fmtMoney(v.amount)),
+      ),
+      h("div",{className:"stat-grid",style:{marginBottom:monthSorted.length>1?"14px":"0"}},
+        h("div",{className:"stat-box"},h("div",{className:"stat-label"},"笔均"),h("div",{className:"stat-value",style:{fontSize:"16px"}},"¥"+fmtMoney(avg))),
+        h("div",{className:"stat-box"},h("div",{className:"stat-label"},"最近一笔"),h("div",{className:"stat-value",style:{fontSize:"14px"}},catEntries[0]?catEntries[0].date.slice(5):"-")),
+      ),
+      monthSorted.length>1 ? h("div",null,
+        h("div",{style:{fontSize:"12px",color:"var(--ink-faint)",marginBottom:"6px"}},"近期月度趋势"),
+        h("div",{className:"bar-chart",style:{height:"70px"}},
+          ...monthSorted.map(([mk,val])=>
+            h("div",{className:"bar-col"},
+              h("div",{className:"bar-val"},val>0?"¥"+Math.round(val):""),
+              h("div",{className:"bar-rect",style:{height:(val/maxM*50)+"px",background:c.color}}),
+              h("div",{className:"bar-label"},mk.slice(5)),
+            )
+          ),
+        ),
+      ) : null,
+    ));
+  }
+}
+
+function renderList(el){
+  const entries=state.data.entries;
+  el.appendChild(h("div",{className:"card"},
+    h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"12px"}},
+      h("div",{className:"card-title",style:{marginBottom:"0"}},"📋","全部明细"),
+      h("span",{style:{fontSize:"12px",color:"var(--ink-faint)"}},"共 "+entries.length+" 笔"),
+    ),
+    entries.length===0
+      ? h("div",{className:"empty"},"还没有任何记录，去记一笔吧~")
+      : h("div",null,...entries.slice(0,80).map(e=>{
+          const c=CAT_MAP[e.category]||CAT_MAP.other;
+          return h("div",{className:"entry-row"},
+            h("div",{className:"entry-icon"},c.icon),
+            h("div",{className:"entry-info"},
+              h("div",{className:"entry-desc"},e.desc),
+              h("div",{className:"entry-meta"},e.date+" · "+c.label),
+            ),
+            h("div",{className:"entry-amount"},"-¥"+fmtMoney(e.amount)),
+            h("button",{className:"entry-del",onClick:()=>{
+              state.data.entries=state.data.entries.filter(x=>x.id!==e.id);
+              save(); render();
+            }},"×"),
+          );
+        })),
+  ));
+}
+
+// ========== ACTIONS ==========
+function addEntry(){
+  const amt=Number(state.amount);
+  if(!amt||isNaN(amt)||amt<=0) return;
+  const entry={
+    id:uid(),
+    desc:state.desc.trim()||"未命名",
+    amount:Number(amt.toFixed(2)),
+    category:state.category||autoCat(state.desc)||"other",
+    date:state.date||today(),
+    ts:Date.now(),
+  };
+  state.data.entries=[entry,...state.data.entries];
+  save();
+  state.desc=""; state.amount=""; state.date=today(); state.category=null;
+  showFlash("✅ 已记录");
+  render();
+}
+
+function showFlash(msg){
+  state.flash=msg;
+  render();
+  setTimeout(()=>{state.flash=null;render();},1300);
+}
+
+// Init
+render();
+</script>
+</body>
+</html>
