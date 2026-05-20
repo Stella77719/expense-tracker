@@ -420,9 +420,14 @@ function save(){sv(S.data)}
 function h(tag,attrs,...ch){
   const el=document.createElement(tag);
   if(attrs)for(const[k,v] of Object.entries(attrs)){
+    // IMPORTANT: HTML boolean attributes such as disabled/checked/selected
+    // are true whenever the attribute exists. disabled="false" still disables.
+    // So false/null/undefined must not be written to the DOM.
+    if(v===false||v==null)continue;
     if(k==="style"&&typeof v==="object")Object.assign(el.style,v);
     else if(k.startsWith("on"))el.addEventListener(k.slice(2).toLowerCase(),v);
     else if(k==="className")el.className=v;
+    else if(k==="disabled"||k==="checked"||k==="selected"||k==="readonly"||k==="required")el[k]=true;
     else el.setAttribute(k,v);
   }
   for(const c of ch.flat(Infinity)){if(c==null||c===false)continue;el.appendChild(typeof c==="string"||typeof c==="number"?document.createTextNode(c):c)}
