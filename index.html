@@ -6,8 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="记账本">
-<title>记账本</title>
-<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<title>记账本 - 多币种汇率版</title>
 <style>
 :root{
   --cream:#FAF7F2;--cream-dark:#F0EBE3;--cream-deep:#E8E0D4;
@@ -17,7 +16,7 @@
   --card:rgba(255,255,255,.72);--card-solid:#FFF;
   --shadow:0 2px 16px rgba(42,96,128,.06);
   --r:18px;--rs:12px;
-  --fc:'Noto Sans SC','PingFang SC',sans-serif;--fe:'Outfit',sans-serif;
+  --fc:-apple-system,BlinkMacSystemFont,'PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif;--fe:-apple-system,BlinkMacSystemFont,'SF Pro Display','Helvetica Neue',Arial,sans-serif;
 }
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{height:100%;overflow:hidden}
@@ -149,8 +148,71 @@ const DEF_CATS=[
 const EMOJIS=["🍜","🚇","🛍️","🎬","🏠","📚","💊","📦","💍","💄","🥂","🐱","🏋️","📱","☕","🎮","✈️","🎵","🌸","💻","👗","👠","💎","🎁","🧸","🍰","🚗","⛽","📖","🏥","🎓","🛒","🍷","🎭","🎨","🌍","💇","🧴","🪴","🐶"];
 const COLORS=["#D4726A","#5A9EC4","#D4A53C","#9B7ED8","#D4885A","#3B7FA8","#C9688F","#E0A458","#E88BA7","#7CB98F","#A0886E","#56B6A6","#6A8DC4","#8FA3B3","#D45D5D","#45A089","#B8860B","#708090","#CD853F","#8B5CF6"];
 
-const CURRENCIES=[{key:"CNY",label:"人民币",symbol:"¥",flag:"🇨🇳"},{key:"NOK",label:"挪威克朗",symbol:"kr",flag:"🇳🇴"}];
+const CURRENCIES=[
+  {key:"CNY",label:"人民币",symbol:"¥",flag:"🇨🇳"},
+  {key:"NOK",label:"挪威克朗",symbol:"kr",flag:"🇳🇴"},
+  {key:"EUR",label:"欧元",symbol:"€",flag:"🇪🇺"},
+  {key:"USD",label:"美元",symbol:"$",flag:"🇺🇸"},
+  {key:"GBP",label:"英镑",symbol:"£",flag:"🇬🇧"},
+  {key:"SEK",label:"瑞典克朗",symbol:"kr",flag:"🇸🇪"},
+  {key:"DKK",label:"丹麦克朗",symbol:"kr",flag:"🇩🇰"},
+  {key:"JPY",label:"日元",symbol:"¥",flag:"🇯🇵"},
+  {key:"KRW",label:"韩元",symbol:"₩",flag:"🇰🇷"},
+  {key:"CAD",label:"加元",symbol:"C$",flag:"🇨🇦"},
+  {key:"AUD",label:"澳元",symbol:"A$",flag:"🇦🇺"},
+  {key:"HKD",label:"港币",symbol:"HK$",flag:"🇭🇰"},
+  {key:"SGD",label:"新加坡元",symbol:"S$",flag:"🇸🇬"}
+];
 const CUR=Object.fromEntries(CURRENCIES.map(c=>[c.key,c]));
+const BASE_CURRENCY="CNY";
+const DEFAULT_RATES_TO_CNY={CNY:1,NOK:0.67,EUR:7.85,USD:7.25,GBP:9.20,SEK:0.71,DKK:1.05,JPY:0.046,KRW:0.0053,CAD:5.30,AUD:4.75,HKD:0.93,SGD:5.38};
+const RATE_SYMBOLS=CURRENCIES.map(c=>c.key).filter(k=>k!=="EUR").join(",");
+const RATE_APIS=[
+  "https://api.frankfurter.dev/v1/latest?base=EUR&symbols="+RATE_SYMBOLS,
+  "https://api.frankfurter.app/latest?from=EUR&to="+RATE_SYMBOLS
+];
+function rateToCNY(cur){return (S&&S.data&&S.data.ratesToCNY&&S.data.ratesToCNY[cur])||DEFAULT_RATES_TO_CNY[cur]||1}
+function amountBase(e){return Number((e.amountBase!=null?e.amountBase:(e.amount||0)*rateToCNY(e.currency||"CNY")).toFixed(2))}
+function makeEntry(desc,amount,category,currency,date){
+  const cur=currency||"CNY";
+  const amt=Number(amount);
+  return {id:uid(),desc:desc||"未知商户",amount:Number(amt.toFixed(2)),category:category||"other",currency:cur,amountBase:Number((amt*rateToCNY(cur)).toFixed(2)),date:date||td(),ts:Date.now()};
+}
+function formatBase(v){return "≈¥"+fm(Number(v||0))}
+function rateStamp(){
+  const t=S.data.ratesUpdatedAt;if(!t)return"未更新，使用内置参考汇率";
+  const d=new Date(t);return"汇率更新时间："+d.toLocaleString("zh-CN",{month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"});
+}
+async function updateRates(silent=false){
+  let lastErr=null;
+  for(const url of RATE_APIS){
+    try{
+      const res=await fetch(url,{cache:"no-store"});
+      if(!res.ok)throw new Error("rate api failed: "+res.status);
+      const data=await res.json();
+      const r=data.rates||{};if(!r.CNY)throw new Error("missing CNY rate");
+      const out={CNY:1,EUR:Number(r.CNY)};
+      for(const c of CURRENCIES){
+        if(c.key==="CNY"||c.key==="EUR")continue;
+        if(r[c.key])out[c.key]=Number((r.CNY/r[c.key]).toFixed(6));
+      }
+      S.data.ratesToCNY={...DEFAULT_RATES_TO_CNY,...out};
+      S.data.ratesUpdatedAt=new Date().toISOString();
+      S.data.entries=(S.data.entries||[]).map(e=>e.amountBase==null?{...e,amountBase:Number(((e.amount||0)*((S.data.ratesToCNY||{})[e.currency||"CNY"]||1)).toFixed(2))}:e);
+      save();
+      if(!silent)flash("✅ 汇率已更新");
+      render();
+      return true;
+    }catch(e){lastErr=e;}
+  }
+  console.warn("rate update failed",lastErr);
+  if(!silent)flash("⚠️ 汇率更新失败，已使用内置参考汇率");
+  return false;
+}
+function autoUpdateRatesIfNeeded(){
+  const last=S.data.ratesUpdatedAt?new Date(S.data.ratesUpdatedAt).getTime():0;
+  if(!last||Date.now()-last>12*60*60*1000)updateRates(true);
+}
 
 const AUTO_RULES=[
   {p:/奶茶|咖啡|星巴克|瑞幸|麦当劳|肯德基|外卖|美团|饿了么|午餐|晚餐|早餐|火锅|烧烤|饭|面|菜|食堂|零食|水果|超市|便利店|餐厅|食品|JOKER|REMA|KIWI|MENY|COOP|BUNNPRIS|SPAR|EXTRA|NARVESEN|7-ELEVEN/i,c:"food"},
@@ -169,7 +231,15 @@ const AUTO_RULES=[
 ];
 function autoCat(d){for(const r of AUTO_RULES)if(r.p.test(d))return r.c;return"other";}
 
-const SAMPLE_SMS=["您的信用卡2207VISA Apple Pay于2026年05月18日，在JOKER消费NOK53.83元。【中国银行】","您的借记卡账户7976，于05月17日网上支付支取人民币19.50元,交易后余额4.41【中国银行】","【建设银行】抖音零钱于5月15日06:15向您账户2955银联入账存入55元,可用余额136.95元。查明细s.ccb.cn/s/a/b8Q","【招商银行】您尾号8888的信用卡12月15日在星巴克消费人民币38.00元，当前可用额度52000.00元。"];
+const SAMPLE_SMS=["您的信用卡2207VISA Apple Pay于2026年05月18日，在JOKER消费NOK53.83元。【中国银行】","您的借记卡账户7976，于05月17日网上支付支取人民币19.50元,交易后余额4.41【中国银行】","【建设银行】抖音零钱于5月15日06:15向您账户2955银联入账存入55元,可用余额136.95元。查明细s.ccb.cn/s/a/b8Q","【招商银行】您尾号8888的信用卡12月15日在星巴克消费人民币38.00元，当前可用额度52000.00元。","Your card ending 1234 was charged USD 12.50 at AMAZON on 2026-05-18.","Kort *1234 brukt hos REMA 1000: NOK 89,90 den 18.05.2026."];
+function detectCurrency(t){
+  const s=String(t||"").toUpperCase();
+  if(/人民币|RMB|CNY|￥|¥/.test(s))return "CNY";
+  for(const c of ["NOK","EUR","USD","GBP","SEK","DKK","JPY","KRW","CAD","AUD","HKD","SGD"]){if(new RegExp("\\b"+c+"\\b").test(s))return c;}
+  if(/€/.test(s))return "EUR";if(/\$|USD/.test(s))return "USD";if(/£/.test(s))return "GBP";if(/₩/.test(s))return "KRW";
+  if(/\bKR\b|KRONER|KORT/.test(s))return "NOK";
+  return "CNY";
+}
 
 function normalizeSmsText(text){
   return String(text||"")
@@ -194,7 +264,25 @@ function splitSmsBlocks(text){
 function parseAmountCurrency(t){
   const patterns=[
     {re:/(?:NOK|kr)\s*([\d,]+(?:\.\d+)?)/i,cur:"NOK"},
-    {re:/([\d,]+(?:\.\d+)?)\s*(?:NOK|kr)\b/i,cur:"NOK"},
+    {re:/([\d,]+(?:\.\d+)?)\s*(?:NOK|kr)/i,cur:"NOK"},
+    {re:/(?:EUR|€)\s*([\d,]+(?:\.\d+)?)/i,cur:"EUR"},
+    {re:/([\d,]+(?:\.\d+)?)\s*(?:EUR|€)/i,cur:"EUR"},
+    {re:/(?:USD|US\$|\$)\s*([\d,]+(?:\.\d+)?)/i,cur:"USD"},
+    {re:/([\d,]+(?:\.\d+)?)\s*(?:USD|US\$)/i,cur:"USD"},
+    {re:/(?:GBP|£)\s*([\d,]+(?:\.\d+)?)/i,cur:"GBP"},
+    {re:/([\d,]+(?:\.\d+)?)\s*(?:GBP|£)/i,cur:"GBP"},
+    {re:/(?:SEK)\s*([\d,]+(?:\.\d+)?)/i,cur:"SEK"},
+    {re:/([\d,]+(?:\.\d+)?)\s*SEK/i,cur:"SEK"},
+    {re:/(?:DKK)\s*([\d,]+(?:\.\d+)?)/i,cur:"DKK"},
+    {re:/([\d,]+(?:\.\d+)?)\s*DKK/i,cur:"DKK"},
+    {re:/(?:JPY|円)\s*([\d,]+(?:\.\d+)?)/i,cur:"JPY"},
+    {re:/([\d,]+(?:\.\d+)?)\s*(?:JPY|円)/i,cur:"JPY"},
+    {re:/(?:KRW|₩)\s*([\d,]+(?:\.\d+)?)/i,cur:"KRW"},
+    {re:/([\d,]+(?:\.\d+)?)\s*(?:KRW|₩)/i,cur:"KRW"},
+    {re:/(?:CAD|C\$)\s*([\d,]+(?:\.\d+)?)/i,cur:"CAD"},
+    {re:/(?:AUD|A\$)\s*([\d,]+(?:\.\d+)?)/i,cur:"AUD"},
+    {re:/(?:HKD|HK\$)\s*([\d,]+(?:\.\d+)?)/i,cur:"HKD"},
+    {re:/(?:SGD|S\$)\s*([\d,]+(?:\.\d+)?)/i,cur:"SGD"},
     {re:/(?:人民币|RMB|CNY|¥|￥)\s*([\d,]+(?:\.\d+)?)/i,cur:"CNY"},
     {re:/(?:消费|支出|扣款|支取|付款|支付|交易金额|网上支付)[^\d]{0,12}([\d,]+(?:\.\d+)?)\s*元/i,cur:"CNY"},
     {re:/([\d,]+(?:\.\d+)?)\s*元/i,cur:"CNY"},
@@ -206,7 +294,6 @@ function parseAmountCurrency(t){
       const idx=m.index||0;
       const before=t.slice(Math.max(0,idx-12),idx);
       const after=t.slice(idx,Math.min(t.length,idx+28));
-      // 排除余额、额度、可用余额等不是本次消费金额的数字
       if(/余额|额度|可用|available|balance/i.test(before+after))continue;
       const v=parseFloat(String(m[1]).replace(/,/g,""));
       if(v>0&&v<1000000)return{amount:Number(v.toFixed(2)),currency:p.cur};
@@ -301,11 +388,16 @@ const MCN=["1月","2月","3月","4月","5月","6月","7月","8月","9月","10月
 // ========== STORAGE ==========
 const SK="expense-tracker-v4";
 function load(){
-  try{const d=localStorage.getItem(SK);if(!d)return{entries:[],budget:3000,categories:DEF_CATS.map(c=>({...c}))};
+  const base={entries:[],budget:3000,categories:DEF_CATS.map(c=>({...c})),ratesToCNY:{...DEFAULT_RATES_TO_CNY},ratesUpdatedAt:null};
+  try{
+    const d=localStorage.getItem(SK);if(!d)return base;
     const parsed=JSON.parse(d);
     if(!parsed.categories)parsed.categories=DEF_CATS.map(c=>({...c}));
+    parsed.ratesToCNY={...DEFAULT_RATES_TO_CNY,...(parsed.ratesToCNY||{})};
+    if(!parsed.entries)parsed.entries=[];
+    parsed.entries=parsed.entries.map(e=>e.amountBase==null?{...e,amountBase:Number(((e.amount||0)*(parsed.ratesToCNY[e.currency||"CNY"]||1)).toFixed(2))}:e);
     return parsed;
-  }catch(e){return{entries:[],budget:3000,categories:DEF_CATS.map(c=>({...c}))}}
+  }catch(e){return base}
 }
 function sv(data){try{localStorage.setItem(SK,JSON.stringify(data))}catch(e){}}
 
@@ -347,8 +439,9 @@ function render(){
   const tE=data.entries.filter(e=>e.date===td());
   function tots(entries){const t={};for(const e of entries){const c=e.currency||"CNY";t[c]=(t[c]||0)+e.amount;}return t}
   const mT=tots(mE),tT=tots(tE);
-  const bp=S.data.budget>0?(mT.CNY||0)/S.data.budget:0;
-  function fts(t){const p=[];if(t.CNY)p.push("¥"+fm(t.CNY));if(t.NOK)p.push("kr"+fm(t.NOK));return p.length?p.join(" + "):"¥0.00"}
+  const mBase=mE.reduce((s,e)=>s+amountBase(e),0),tBase=tE.reduce((s,e)=>s+amountBase(e),0);
+  const bp=S.data.budget>0?mBase/S.data.budget:0;
+  function fts(t,base){const p=[];for(const c of CURRENCIES.map(x=>x.key)){if(t[c])p.push(cs(c)+fm(t[c]));}return (p.length?p.join(" + "):"¥0.00")+(base!=null&&p.length?" · "+formatBase(base):"")}
 
   if(S.flash)app.appendChild(h("div",{className:"fl"},S.flash));
 
@@ -357,14 +450,14 @@ function render(){
     h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"16px",position:"relative",zIndex:"1"}},
       h("div",null,
         h("div",{style:{fontSize:"12px",opacity:".7",letterSpacing:"1.5px",fontFamily:"var(--fe)",fontWeight:"300"}},"💰 记账本"),
-        h("div",{style:{fontSize:"24px",fontWeight:"700",fontFamily:"var(--fe)",marginTop:"4px"}},fts(mT)),
+        h("div",{style:{fontSize:"24px",fontWeight:"700",fontFamily:"var(--fe)",marginTop:"4px"}},fts(mT,mBase)),
         h("div",{style:{fontSize:"11px",opacity:".6",marginTop:"2px"}},"本月支出")),
       h("div",{style:{textAlign:"right"}},
         h("div",{style:{fontSize:"11px",opacity:".6"}},"今日"),
-        h("div",{style:{fontSize:"18px",fontWeight:"600",fontFamily:"var(--fe)",marginTop:"2px"}},fts(tT)))),
+        h("div",{style:{fontSize:"18px",fontWeight:"600",fontFamily:"var(--fe)",marginTop:"2px"}},fts(tT,tBase)))),
     h("div",{style:{position:"relative",zIndex:"1"}},
       h("div",{style:{display:"flex",justifyContent:"space-between",fontSize:"11px",opacity:".7",marginBottom:"5px"}},
-        h("span",{style:{cursor:"pointer",borderBottom:"1px dashed rgba(255,255,255,.4)"},onClick:()=>set({editBudget:true,budgetInput:String(data.budget)})},"预算: ¥"+data.budget),
+        h("span",{style:{cursor:"pointer",borderBottom:"1px dashed rgba(255,255,255,.4)"},onClick:()=>set({editBudget:true,budgetInput:String(data.budget)})},"预算: ¥"+data.budget+"（按人民币统计）"),
         h("span",{style:{color:bp>1?"#ff8a80":bp>.8?"#ffe082":"#a5d6a7"}},Math.round(bp*100)+"%")),
       h("div",{style:{height:"5px",background:"rgba(255,255,255,.18)",borderRadius:"3px",overflow:"hidden"}},
         h("div",{style:{height:"100%",width:Math.min(bp,1)*100+"%",borderRadius:"3px",transition:"width .6s",background:bp>1?"var(--red)":bp>.8?"var(--amber)":"var(--green)"}})),
@@ -394,7 +487,7 @@ function render(){
 function vHome(el,mE,tE,CM,fts,mT){
   el.appendChild(h("div",{className:"cd"},
     h("div",{className:"ct-t"},"⚡","快速记账"),
-    h("div",{style:{display:"flex",gap:"8px",marginBottom:"10px"}},
+    h("div",{style:{display:"flex",gap:"8px",marginBottom:"10px",flexWrap:"wrap"}},
       ...CURRENCIES.map(c=>h("span",{className:"cup"+(S.currency===c.key?" a":""),onClick:()=>set({currency:c.key})},c.flag," ",c.label))),
     h("div",{style:{display:"flex",gap:"8px"}},
       h("input",{placeholder:"描述（自动识别分类）",value:S.desc,onInput:e=>{S.desc=e.target.value;S.category=S.desc.trim()?autoCat(S.desc):null}}),
@@ -418,7 +511,7 @@ function vHome(el,mE,tE,CM,fts,mT){
     :h("div",null,...tE.map(e=>{const c=CM[e.category]||CM.other||{icon:"📦",label:"其他"};const cur=e.currency||"CNY";
       return h("div",{className:"er"},h("div",{className:"ei"},c.icon),h("div",{className:"ef"},h("div",{className:"ed"},e.desc),h("div",{className:"em"},c.label,h("span",{className:"cb "+(cur==="NOK"?"cn":"cc")},cur))),h("div",{className:"ea"},"-"+fa(e.amount,cur)))}))));
 
-  const byCat={};for(const e of mE)byCat[e.category]=(byCat[e.category]||0)+e.amount;
+  const byCat={};for(const e of mE)byCat[e.category]=(byCat[e.category]||0)+amountBase(e);
   const sorted=Object.entries(byCat).sort((a,b)=>b[1]-a[1]);
   if(sorted.length>0){
     el.appendChild(gap(12));
@@ -468,9 +561,23 @@ function vSMS(el,CM){
           h("div",{style:{flex:"1",minWidth:"0"}},h("div",{className:"ed"},r.merchant),h("div",{className:"em"},r.date+" · "+c.label,h("span",{className:"cb "+((r.currency||"CNY")==="NOK"?"cn":"cc")},r.currency||"CNY"))),
           h("div",{className:"ea",style:{flexShrink:"0"}},"-"+fa(r.amount,r.currency||"CNY")))}),
       h("button",{className:"btn bs bw",style:{marginTop:"8px"},disabled:S.smsSelected.size===0,onClick:()=>{
-        const ta=S.smsParsed.filter((_,i)=>S.smsSelected.has(i));
-        const nE=ta.map(r=>({id:uid(),desc:r.merchant,amount:r.amount,category:r.category,currency:r.currency||"CNY",date:r.date,ts:Date.now()}));
-        S.data.entries=[...nE,...S.data.entries];save();flash("✅ 已导入 "+nE.length+" 笔");set({smsText:"",smsParsed:[],smsSelected:new Set()})
+        try{
+          const ta=S.smsParsed.filter((_,i)=>S.smsSelected.has(i));
+          const nE=ta.map(r=>makeEntry(r.merchant||"未知商户",Number(r.amount),r.category||"other",r.currency||"CNY",r.date||td()));
+          if(!nE.length){alert("没有可导入的记录。请先勾选识别结果。");return;}
+          S.data.entries=[...nE,...S.data.entries];
+          save();
+          S.smsText="";
+          S.smsParsed=[];
+          S.smsSelected=new Set();
+          S.view="home";
+          S.flash="✅ 已导入 "+nE.length+" 笔，已回到首页";
+          render();
+          setTimeout(()=>{S.flash=null;render()},1300);
+        }catch(err){
+          console.error(err);
+          alert("导入失败："+(err&&err.message?err.message:err));
+        }
       }},"📥 导入 "+S.smsSelected.size+" 笔记录")));
   }
 }
@@ -481,7 +588,7 @@ function vAdd(el,CM){
   el.appendChild(h("div",{className:"cd"},
     h("div",{className:"ct-t"},"📝","记一笔"),
     h("div",{style:{fontSize:"12px",color:"var(--ink-faint)",marginBottom:"6px"}},"币种"),
-    h("div",{style:{display:"flex",gap:"8px",marginBottom:"14px"}},...CURRENCIES.map(c=>h("span",{className:"cup"+(S.currency===c.key?" a":""),onClick:()=>set({currency:c.key})},c.flag," ",c.label))),
+    h("div",{style:{display:"flex",gap:"8px",marginBottom:"14px",flexWrap:"wrap"}},...CURRENCIES.map(c=>h("span",{className:"cup"+(S.currency===c.key?" a":""),onClick:()=>set({currency:c.key})},c.flag," ",c.label))),
     h("div",{style:{fontSize:"12px",color:"var(--ink-faint)",marginBottom:"4px"}},"描述"),
     h("input",{placeholder:"例如：星巴克拿铁",value:S.desc,onInput:e=>{S.desc=e.target.value;S.category=S.desc.trim()?autoCat(S.desc):null}}),
     h("div",{style:{fontSize:"12px",color:"var(--ink-faint)",margin:"12px 0 4px"}},"金额 ("+cs(S.currency)+")"),
@@ -517,12 +624,12 @@ function rMon(el,CM){
     h("div",{className:"sx"},h("div",{className:"sl"},"总支出"),h("div",{className:"sv",style:{color:"var(--red)",fontSize:"16px"}},tp)),
     h("div",{className:"sx"},h("div",{className:"sl"},"笔数"),h("div",{className:"sv"},String(entries.length))),
     ...Object.entries(byCur).map(([c,v])=>h("div",{className:"sx"},h("div",{className:"sl"},"日均("+c+")"),h("div",{className:"sv"},cs(c)+fm(dp>0?v/dp:0)))),
-    h("div",{className:"sx"},h("div",{className:"sl"},"剩余预算(CNY)"),h("div",{className:"sv",style:{color:S.data.budget-(byCur.CNY||0)>=0?"var(--green)":"var(--red)"}},"¥"+fm(S.data.budget-(byCur.CNY||0)))))));
+    h("div",{className:"sx"},h("div",{className:"sl"},"剩余预算(CNY)"),h("div",{className:"sv",style:{color:S.data.budget-entries.reduce((s,e)=>s+amountBase(e),0)>=0?"var(--green)":"var(--red)"}},"¥"+fm(S.data.budget-entries.reduce((s,e)=>s+amountBase(e),0)))))));
   if(!entries.length){el.appendChild(h("div",{className:"cd"},h("div",{className:"ey"},"该月暂无数据")));return}
-  const dm={};for(const e of entries)dm[e.date]=(dm[e.date]||0)+e.amount;const days=Object.entries(dm).sort((a,b)=>a[0].localeCompare(b[0]));const mx=Math.max(...days.map(d=>d[1]));
+  const dm={};for(const e of entries)dm[e.date]=(dm[e.date]||0)+amountBase(e);const days=Object.entries(dm).sort((a,b)=>a[0].localeCompare(b[0]));const mx=Math.max(...days.map(d=>d[1]));
   el.appendChild(gap(12));
   el.appendChild(h("div",{className:"cd"},h("div",{className:"ct-t"},"📈","每日消费"),h("div",{className:"bc"},...days.map(([d,v])=>h("div",{className:"bcl"},h("div",{className:"bv"},v>mx*.25?Math.round(v):""),h("div",{className:"br",style:{height:(v/mx*80)+"px",background:"linear-gradient(to top,var(--blue-5),var(--blue-3))"}}),h("div",{className:"bl"},fd(d)))))));
-  const byCat={};for(const e of entries)byCat[e.category]=(byCat[e.category]||0)+e.amount;const sorted=Object.entries(byCat).sort((a,b)=>b[1]-a[1]);const total=entries.reduce((s,e)=>s+e.amount,0);
+  const byCat={};for(const e of entries)byCat[e.category]=(byCat[e.category]||0)+amountBase(e);const sorted=Object.entries(byCat).sort((a,b)=>b[1]-a[1]);const total=entries.reduce((s,e)=>s+amountBase(e),0);
   el.appendChild(gap(12));
   el.appendChild(h("div",{className:"cd"},h("div",{className:"ct-t"},"📊","分类明细"),
     h("div",{className:"sb"},...sorted.map(([k,v])=>{const c=CM[k]||{icon:"📦",color:"#8FA3B3"};return h("div",{style:{width:(v/total*100)+"%",background:c.color,color:"#fff",fontWeight:"600"}},v/total>.08?c.icon:"")})),
@@ -541,7 +648,7 @@ function rYr(el,CM){
   const entries=S.data.entries.filter(e=>yk(e.date)===yr);
   const byCur={};for(const e of entries){const c=e.currency||"CNY";byCur[c]=(byCur[c]||0)+e.amount}
   const tp=Object.entries(byCur).map(([c,v])=>cs(c)+fm(v)).join(" + ")||"¥0.00";
-  const byMonth={};for(let m=1;m<=12;m++)byMonth[String(m).padStart(2,"0")]=0;for(const e of entries)byMonth[String(new Date(e.date).getMonth()+1).padStart(2,"0")]+=e.amount;
+  const byMonth={};for(let m=1;m<=12;m++)byMonth[String(m).padStart(2,"0")]=0;for(const e of entries)byMonth[String(new Date(e.date).getMonth()+1).padStart(2,"0")]+=amountBase(e);
   const mArr=Object.entries(byMonth);const mx=Math.max(...mArr.map(x=>x[1]),1);
   el.appendChild(h("div",{className:"cd"},h("div",{className:"sg"},
     h("div",{className:"sx"},h("div",{className:"sl"},"年度总支出"),h("div",{className:"sv",style:{color:"var(--red)",fontSize:"16px"}},tp)),
@@ -559,8 +666,8 @@ function rYr(el,CM){
 
 function rCt(el,CM){
   const entries=S.data.entries;if(!entries.length){el.appendChild(h("div",{className:"cd"},h("div",{className:"ey"},"暂无数据")));return}
-  const total=entries.reduce((s,e)=>s+e.amount,0);
-  const byCat={};for(const e of entries){if(!byCat[e.category])byCat[e.category]={amount:0,count:0};byCat[e.category].amount+=e.amount;byCat[e.category].count++}
+  const total=entries.reduce((s,e)=>s+amountBase(e),0);
+  const byCat={};for(const e of entries){if(!byCat[e.category])byCat[e.category]={amount:0,count:0};byCat[e.category].amount+=amountBase(e);byCat[e.category].count++}
   const sorted=Object.entries(byCat).filter(x=>x[1].amount>0).sort((a,b)=>b[1].amount-a[1].amount);
   el.appendChild(h("div",{className:"cd"},h("div",{className:"ct-t"},"📊","全部分类汇总"),
     h("div",{className:"sb",style:{height:"30px",marginBottom:"2px"}},...sorted.map(([k,v])=>{const c=CM[k]||{icon:"📦",color:"#8FA3B3"};return h("div",{style:{width:(v.amount/total*100)+"%",background:c.color,color:"#fff",fontWeight:"600"}},v.amount/total>.08?c.icon:"")})),
@@ -629,6 +736,17 @@ function vSettings(el){
     :h("button",{className:"btn bp bw",onClick:()=>set({showAddCat:true})},"➕ 添加新分类"),
   ));
 
+
+  el.appendChild(gap(12));
+  el.appendChild(h("div",{className:"cd"},
+    h("div",{className:"ct-t"},"💱","汇率设置"),
+    h("div",{style:{fontSize:"12px",color:"var(--ink-faint)",lineHeight:"1.8",marginBottom:"10px"}},"所有币种会自动折算成人民币用于预算和报表汇总。联网时可更新实时汇率；没网时使用内置参考汇率。",h("br"),rateStamp()),
+    h("button",{className:"btn bp bw",onClick:()=>updateRates(false)},"🔄 更新汇率"),
+    h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"6px",marginTop:"10px"}},
+      ...CURRENCIES.filter(c=>c.key!=="CNY").map(c=>h("div",{style:{fontSize:"11px",color:"var(--ink-light)",background:"var(--cream)",padding:"6px 8px",borderRadius:"8px"}},c.flag," 1 "+c.key+" ≈ ¥"+fm(rateToCNY(c.key))))
+    )
+  ));
+
   // Data management
   el.appendChild(gap(12));
   el.appendChild(h("div",{className:"cd"},
@@ -646,14 +764,14 @@ function vSettings(el){
 // ========== ACTIONS ==========
 function doAdd(){
   const amt=Number(S.amount);if(!amt||isNaN(amt)||amt<=0)return;
-  S.data.entries=[{id:uid(),desc:S.desc.trim()||"未命名",amount:Number(amt.toFixed(2)),
-    category:S.category||autoCat(S.desc)||"other",currency:S.currency,date:S.date||td(),ts:Date.now()},...S.data.entries];
+  S.data.entries=[makeEntry(S.desc.trim()||"未命名",amt,S.category||autoCat(S.desc)||"other",S.currency,S.date||td()),...S.data.entries];
   save();S.desc="";S.amount="";S.date=td();S.category=null;flash("✅ 已记录");render();
 }
 function flash(msg){S.flash=msg;render();setTimeout(()=>{S.flash=null;render()},1300)}
 
 parseFromUrlIfAny();
 render();
+autoUpdateRatesIfNeeded();
 </script>
 </body>
 </html>
