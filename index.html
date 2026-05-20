@@ -117,6 +117,12 @@ input[type=number]{-moz-appearance:textfield}
 .color-grid{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
 .color-btn{width:30px;height:30px;border-radius:50%;border:2px solid transparent;cursor:pointer;transition:all .15s}
 .color-btn.a{border-color:var(--ink);transform:scale(1.15)}
+
+.warn{background:#FFF8E7;border:1px solid #F0D48A;color:#7A5A12;border-radius:var(--rs);padding:12px 14px;font-size:12px;line-height:1.8;margin:12px 0}
+.okbox{background:#F0FAF4;border:1px solid #B9E2CB;color:#315F48;border-radius:var(--rs);padding:12px 14px;font-size:12px;line-height:1.8;margin:12px 0}
+.mini{font-size:11px;color:var(--ink-faint);line-height:1.7}
+.codebox{font-family:var(--fe);background:rgba(255,255,255,.78);border:1px dashed var(--blue-3);border-radius:10px;padding:8px 10px;font-size:11px;color:var(--blue-6);word-break:break-all;margin-top:8px}
+
 </style>
 </head>
 <body>
@@ -165,61 +171,121 @@ function autoCat(d){for(const r of AUTO_RULES)if(r.p.test(d))return r.c;return"o
 
 const SAMPLE_SMS=["您的信用卡2207VISA Apple Pay于2026年05月18日，在JOKER消费NOK53.83元。【中国银行】","您的借记卡账户7976，于05月17日网上支付支取人民币19.50元,交易后余额4.41【中国银行】","【建设银行】抖音零钱于5月15日06:15向您账户2955银联入账存入55元,可用余额136.95元。查明细s.ccb.cn/s/a/b8Q","【招商银行】您尾号8888的信用卡12月15日在星巴克消费人民币38.00元，当前可用额度52000.00元。"];
 
+function normalizeSmsText(text){
+  return String(text||"")
+    .replace(/\r/g,"\n")
+    .replace(/[，]/g,",")
+    .replace(/[。]/g,".")
+    .replace(/\s+【/g,"\n【")
+    .replace(/】\s+/g,"】\n")
+    .trim();
+}
+function splitSmsBlocks(text){
+  const clean=normalizeSmsText(text);
+  if(!clean)return[];
+  // 优先按空行切分；如果用户一次粘贴多条短信，也尽量按银行签名/短信开头切开
+  let blocks=clean.split(/\n{2,}/).map(x=>x.trim()).filter(Boolean);
+  if(blocks.length<=1){
+    blocks=clean.split(/(?=【[^】]{1,20}】)|(?=您的[^\n]{0,20}(?:信用卡|借记卡|账户|尾号))|(?=You\s+(?:paid|spent|used))/i)
+      .map(x=>x.trim()).filter(Boolean);
+  }
+  return blocks.length?blocks:[clean];
+}
+function parseAmountCurrency(t){
+  const patterns=[
+    {re:/(?:NOK|kr)\s*([\d,]+(?:\.\d+)?)/i,cur:"NOK"},
+    {re:/([\d,]+(?:\.\d+)?)\s*(?:NOK|kr)\b/i,cur:"NOK"},
+    {re:/(?:人民币|RMB|CNY|¥|￥)\s*([\d,]+(?:\.\d+)?)/i,cur:"CNY"},
+    {re:/(?:消费|支出|扣款|支取|付款|支付|交易金额|网上支付)[^\d]{0,12}([\d,]+(?:\.\d+)?)\s*元/i,cur:"CNY"},
+    {re:/([\d,]+(?:\.\d+)?)\s*元/i,cur:"CNY"},
+  ];
+  for(const p of patterns){
+    const flags=p.re.flags.includes("g")?p.re.flags:p.re.flags+"g";
+    const matches=[...t.matchAll(new RegExp(p.re.source,flags))];
+    for(const m of matches){
+      const idx=m.index||0;
+      const before=t.slice(Math.max(0,idx-12),idx);
+      const after=t.slice(idx,Math.min(t.length,idx+28));
+      // 排除余额、额度、可用余额等不是本次消费金额的数字
+      if(/余额|额度|可用|available|balance/i.test(before+after))continue;
+      const v=parseFloat(String(m[1]).replace(/,/g,""));
+      if(v>0&&v<1000000)return{amount:Number(v.toFixed(2)),currency:p.cur};
+    }
+  }
+  return null;
+}
+function parseMerchant(t){
+  const patterns=[
+    /(?:在|于)\s*([A-Za-z\u4e00-\u9fff][A-Za-z0-9\u4e00-\u9fff\s·\-\.]{1,30}?)(?:消费|支付|扣款|刷卡|交易)/i,
+    /(?:向|至|付给|收款方)\s*([A-Za-z\u4e00-\u9fff][A-Za-z0-9\u4e00-\u9fff\s·\-\.]{1,30}?)(?:支付|消费|转账|付款)/i,
+    /(?:商户|摘要|对方|交易对象|Merchant)[:：\s]*([^,，。！!\n]{2,30})/i,
+    /(?:at|to)\s+([A-Za-z][A-Za-z0-9\s\-\.]{1,30})(?:\s+for|\s+NOK|\s+kr|\s+on|$)/i,
+  ];
+  for(const p of patterns){
+    const m=t.match(p);
+    if(m&&m[1])return m[1].trim().replace(/[,，。；;\s]+$/,"");
+  }
+  if(/网上支付/.test(t))return"网上支付";
+  if(/Apple\s*Pay/i.test(t))return"Apple Pay";
+  return"未知商户";
+}
+function parseSmsDate(t){
+  const now=new Date();
+  let m=t.match(/(20\d{2})[年\/\-.](\d{1,2})[月\/\-.](\d{1,2})[日号]?/);
+  if(m)return`${m[1]}-${m[2].padStart(2,"0")}-${m[3].padStart(2,"0")}`;
+  m=t.match(/(?:于|日期|on)?\s*(\d{1,2})[月\/\-.](\d{1,2})[日号]?/);
+  if(m)return`${now.getFullYear()}-${m[1].padStart(2,"0")}-${m[2].padStart(2,"0")}`;
+  m=t.match(/(\d{1,2})\/(\d{1,2})\/(20\d{2})/);
+  if(m)return`${m[3]}-${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}`;
+  return td();
+}
 function parseSMS(text){
   const R=[];
-  // Split by bank signature tags【...】or double newlines
-  const blocks=text.split(/(?<=【[^】]+】)\s*(?=\S)|(?<=元[。.]?\s*)\s*(?=【)|(?<=查明细\S+)\s+|\n{2,}|\r\n{2,}/);
-  const parts=blocks.length>1?blocks:[text];
-  for(const block of parts){
-    const t=block.trim();if(!t)continue;
-    // Skip income/入账 messages
-    if(/入账|存入|转入|收到|退款/.test(t)&&!/消费|支付|支取|扣款/.test(t))continue;
-    let amount=null,merchant=null,dateStr=null,currency="CNY";
-    // --- Currency & Amount ---
-    // NOK pattern: 消费NOK53.83元 or NOK 53.83
-    const nokMatch=t.match(/NOK\s*([\d,]+\.?\d*)\s*元?/i);
-    if(nokMatch){const v=parseFloat(nokMatch[1].replace(/,/g,""));if(v>0&&v<1000000){amount=v;currency="NOK";}}
-    // CNY patterns
-    if(!amount){
-      const aP=[
-        /(?:消费|支出|扣款|支取|付款|交易金额)[^\d]*?(?:人民币|RMB)?\s*([\d,]+\.?\d*)\s*元/i,
-        /(?:人民币|RMB)\s*([\d,]+\.?\d*)\s*元?/i,
-        /(?:金额|消费|支付)[^\d]*?([\d,]+\.?\d*)\s*元/i,
-        /[¥￥]\s*([\d,]+\.?\d*)/,
-        /([\d,]+\.?\d*)\s*元/,
-      ];
-      for(const p of aP){const m=t.match(p);if(m){const v=parseFloat(m[1].replace(/,/g,""));
-        // Skip if this looks like a balance amount (after 余额/可用额度)
-        const fullMatch=m[0];const idx=t.indexOf(fullMatch);
-        const before=t.slice(Math.max(0,idx-6),idx);
-        if(/余额|额度|可用/.test(before))continue;
-        if(v>0&&v<1000000){amount=v;break;}}}
-    }
-    // --- Merchant ---
-    // Pattern: 在JOKER消费 / 在星巴克消费 / 向美团外卖支付
-    const mP=[
-      /(?:在|于)\s*([A-Za-z\u4e00-\u9fff][A-Za-z0-9\u4e00-\u9fff\s·\-]{0,25}?)(?:消费|支付|扣款|刷卡)/,
-      /(?:向|至|付给)\s*([A-Za-z\u4e00-\u9fff][A-Za-z0-9\u4e00-\u9fff\s·\-]{0,25}?)(?:支付|消费|转账)/,
-      /(?:在|于)[：:\s]*([^\d\s,，。！\n]{2,20})/,
-      /(?:商户|摘要|对方|收款方)[：:\s]*([^\d\s,，。！\n]{2,20})/,
-      /网上支付支取/,
-    ];
-    for(const p of mP){const m=t.match(p);
-      if(m&&m[1]){merchant=m[1].trim().replace(/[，。、；\s]+$/,"");break;}}
-    // Fallback: if contains 网上支付 but no merchant
-    if(!merchant&&/网上支付/.test(t))merchant="网上支付";
-    // For Apple Pay / VISA etc, try to get the store name
-    if(!merchant){const fb=t.match(/(?:Pay|VISA|银联)[^\n]*?(?:在|于)\s*([A-Za-z\u4e00-\u9fff][A-Za-z0-9\u4e00-\u9fff\-\s]{1,20}?)(?:消费|支付)/);if(fb)merchant=fb[1].trim();}
-    // --- Date ---
-    const dP=[/(\d{4})[年/\-.](\d{1,2})[月/\-.](\d{1,2})[日号]?/,/(?:于|日期)?\s*(\d{1,2})[月/](\d{1,2})[日号]?/];
-    for(const p of dP){const m=t.match(p);if(m){
-      if(m.length>=4)dateStr=`${m[1]}-${m[2].padStart(2,"0")}-${m[3].padStart(2,"0")}`;
-      else if(m.length>=3){dateStr=`${new Date().getFullYear()}-${m[1].padStart(2,"0")}-${m[2].padStart(2,"0")}`;}
-      break;}}
-    if(amount)R.push({amount,merchant:merchant||"未知商户",date:dateStr||td(),category:autoCat(merchant||t),currency,raw:t.slice(0,100)});
-  }return R;
+  for(const t of splitSmsBlocks(text)){
+    // 明确收入/退款类默认跳过，避免把入账当支出
+    if(/入账|存入|转入|收入|到账|退款|refund/i.test(t)&&!/消费|支付|支取|扣款|付款|paid|spent/i.test(t))continue;
+    const ac=parseAmountCurrency(t);
+    if(!ac)continue;
+    const merchant=parseMerchant(t);
+    const dateStr=parseSmsDate(t);
+    R.push({
+      amount:ac.amount,
+      merchant,
+      date:dateStr,
+      category:autoCat(merchant+" "+t),
+      currency:ac.currency,
+      raw:t.slice(0,160)
+    });
+  }
+  return R;
 }
 
+async function pasteFromClipboard(){
+  if(!navigator.clipboard||!navigator.clipboard.readText){
+    alert("当前浏览器不支持直接读取剪贴板。请手动长按输入框粘贴短信。");
+    return;
+  }
+  try{
+    const txt=await navigator.clipboard.readText();
+    if(!txt.trim()){flash("剪贴板是空的");return;}
+    const r=parseSMS(txt);
+    S.smsText=txt;S.smsParsed=r;S.smsSelected=new Set(r.map((_,i)=>i));S.view="sms";render();
+    if(r.length)flash("✅ 已从剪贴板识别 "+r.length+" 笔");
+    else flash("没有识别到消费短信");
+  }catch(e){
+    alert("读取剪贴板失败。iPhone 上通常需要先复制短信，再手动粘贴到输入框。");
+  }
+}
+function parseFromUrlIfAny(){
+  try{
+    const q=new URLSearchParams(location.search);
+    const txt=q.get("sms")||q.get("text")||q.get("body");
+    if(!txt)return;
+    const r=parseSMS(txt);
+    S.smsText=txt;S.smsParsed=r;S.smsSelected=new Set(r.map((_,i)=>i));S.view="sms";
+    history.replaceState(null,"",location.pathname);
+  }catch(e){}
+}
 // ========== UTILS ==========
 function td(){return new Date().toISOString().slice(0,10)}
 function mk(d){const x=new Date(d);return`${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,"0")}`}
@@ -370,14 +436,26 @@ function vHome(el,mE,tE,CM,fts,mT){
 function vSMS(el,CM){
   el.appendChild(h("div",{className:"cd"},
     h("div",{className:"ct-t"},"📩","短信智能记账"),
-    h("div",{style:{fontSize:"12px",color:"var(--ink-faint)",marginBottom:"14px"}},"复制银行消费短信，粘贴到下方，自动提取金额、商户和日期"),
+    h("div",{style:{fontSize:"12px",color:"var(--ink-faint)",marginBottom:"14px"}},"网页不能自动读取 iPhone 短信；这里支持复制短信后粘贴解析，也支持快捷指令把短信文本传进来。"),
+    h("div",{className:"warn"},
+      h("b",null,"重要限制："),"HTML/PWA 没有权限监听或读取系统短信。真正能做的是：",h("br"),
+      "① 手动复制短信 → 在这里粘贴；",h("br"),
+      "② 或用 iOS 快捷指令把短信内容拼到网址参数 ?sms= 后打开本页面。"),
     h("div",{className:"hw"},
-      h("div",{style:{fontSize:"13px",fontWeight:"600",color:"var(--blue-5)",marginBottom:"6px"}},"📱 使用方法"),
-      h("div",{style:{fontSize:"12px",color:"var(--blue-6)",lineHeight:"1.9"}},"① 打开手机「信息」App",h("br"),"② 长按银行消费通知短信 → 拷贝",h("br"),"③ 粘贴到下方输入框",h("br"),"④ 点击「解析短信」→ 确认 → 一键导入")),
-    h("textarea",{placeholder:"在此粘贴银行消费短信...",value:S.smsText,style:{marginTop:"14px"},onInput:e=>{S.smsText=e.target.value;S.smsParsed=[]}}),
-    h("div",{style:{display:"flex",gap:"8px",marginTop:"10px"}},
-      h("button",{className:"btn bp",style:{flex:"1"},disabled:!S.smsText.trim(),onClick:()=>{const r=parseSMS(S.smsText);set({smsParsed:r,smsSelected:new Set(r.map((_,i)=>i))})}},"🔍 解析短信"),
-      h("button",{className:"btn bg",onClick:()=>set({smsText:SAMPLE_SMS.join("\n\n"),smsParsed:[],smsSelected:new Set()})},"试试示例"))));
+      h("div",{style:{fontSize:"13px",fontWeight:"600",color:"var(--blue-5)",marginBottom:"6px"}},"📱 推荐使用方法"),
+      h("div",{style:{fontSize:"12px",color:"var(--blue-6)",lineHeight:"1.9"}},"① 打开「信息」App，长按银行消费短信并复制",h("br"),"② 回到本页面，点「读取剪贴板」或手动粘贴",h("br"),"③ 点击「解析短信」→ 选择要导入的记录 → 一键导入"),
+      h("div",{className:"codebox"},"快捷指令网址格式：你的页面地址?sms=短信文本")),
+    h("textarea",{placeholder:"在此粘贴银行消费短信...",value:S.smsText,style:{marginTop:"14px"},onInput:e=>{S.smsText=e.target.value;S.smsParsed=[]},onPaste:e=>{setTimeout(()=>{const txt=e.target.value;const r=parseSMS(txt);set({smsText:txt,smsParsed:r,smsSelected:new Set(r.map((_,i)=>i))})},0)}}),
+    h("div",{style:{display:"flex",gap:"8px",marginTop:"10px",flexWrap:"wrap"}},
+      h("button",{className:"btn bp",style:{flex:"1 1 120px"},disabled:!S.smsText.trim(),onClick:()=>{const r=parseSMS(S.smsText);set({smsParsed:r,smsSelected:new Set(r.map((_,i)=>i))})}},"🔍 解析短信"),
+      h("button",{className:"btn bg",style:{flex:"1 1 120px"},onClick:pasteFromClipboard},"📋 读取剪贴板"),
+      h("button",{className:"btn bg",style:{flex:"1 1 100px"},onClick:()=>set({smsText:SAMPLE_SMS.join("\n\n"),smsParsed:[],smsSelected:new Set()})},"试试示例"))));
+  if(S.smsText.trim()&&S.smsParsed.length===0){
+    el.appendChild(gap(12));
+    el.appendChild(h("div",{className:"cd"},
+      h("div",{className:"ct-t"},"⚠️","暂时没有识别到消费记录"),
+      h("div",{className:"mini"},"请检查短信里是否包含消费/支付/扣款金额。余额、额度、入账、退款类信息会被自动跳过。")));
+  }
   if(S.smsParsed.length>0){
     el.appendChild(gap(12));
     el.appendChild(h("div",{className:"cd"},
@@ -574,6 +652,7 @@ function doAdd(){
 }
 function flash(msg){S.flash=msg;render();setTimeout(()=>{S.flash=null;render()},1300)}
 
+parseFromUrlIfAny();
 render();
 </script>
 </body>
