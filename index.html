@@ -147,9 +147,9 @@ const CURRENCIES=[{key:"CNY",label:"人民币",symbol:"¥",flag:"🇨🇳"},{key
 const CUR=Object.fromEntries(CURRENCIES.map(c=>[c.key,c]));
 
 const AUTO_RULES=[
-  {p:/奶茶|咖啡|星巴克|瑞幸|麦当劳|肯德基|外卖|美团|饿了么|午餐|晚餐|早餐|火锅|烧烤|饭|面|菜|食堂|零食|水果|超市|便利店|餐厅|食品/i,c:"food"},
-  {p:/地铁|公交|打车|滴滴|uber|加油|停车|高铁|火车|飞机|机票|油费|出租|铁路|航空|交通/i,c:"transport"},
-  {p:/淘宝|京东|拼多多|衣服|鞋|包|日用|天猫|商城|百货/i,c:"shopping"},
+  {p:/奶茶|咖啡|星巴克|瑞幸|麦当劳|肯德基|外卖|美团|饿了么|午餐|晚餐|早餐|火锅|烧烤|饭|面|菜|食堂|零食|水果|超市|便利店|餐厅|食品|JOKER|REMA|KIWI|MENY|COOP|BUNNPRIS|SPAR|EXTRA|NARVESEN|7-ELEVEN/i,c:"food"},
+  {p:/地铁|公交|打车|滴滴|uber|加油|停车|高铁|火车|飞机|机票|油费|出租|铁路|航空|交通|RUTER|VY|FLYBUSSEN|CIRCLE\s*K|ESSO|SHELL/i,c:"transport"},
+  {p:/淘宝|京东|拼多多|衣服|鞋|包|日用|天猫|商城|百货|H&M|ZARA|CUBUS|BIKBOK|STORMBERG/i,c:"shopping"},
   {p:/电影|游戏|KTV|演出|门票|旅游|酒店|民宿|景点|影院|票务/i,c:"entertainment"},
   {p:/房租|水电|物业|网费|维修|家具|装修|燃气|暖气/i,c:"housing"},
   {p:/学费|书|课程|培训|考试|文具|打印|教育|学校/i,c:"education"},
@@ -163,19 +163,60 @@ const AUTO_RULES=[
 ];
 function autoCat(d){for(const r of AUTO_RULES)if(r.p.test(d))return r.c;return"other";}
 
-const SAMPLE_SMS=["【招商银行】您尾号8888的信用卡12月15日在星巴克消费人民币38.00元，当前可用额度52000.00元。","【建设银行】您尾号6666储蓄卡12月16日向美团外卖支付人民币45.50元，余额1234.56元。","【工商银行】您的账户于2025年12月17日在滴滴出行消费¥23.80，余额8888.00元。"];
+const SAMPLE_SMS=["您的信用卡2207VISA Apple Pay于2026年05月18日，在JOKER消费NOK53.83元。【中国银行】","您的借记卡账户7976，于05月17日网上支付支取人民币19.50元,交易后余额4.41【中国银行】","【建设银行】抖音零钱于5月15日06:15向您账户2955银联入账存入55元,可用余额136.95元。查明细s.ccb.cn/s/a/b8Q","【招商银行】您尾号8888的信用卡12月15日在星巴克消费人民币38.00元，当前可用额度52000.00元。"];
 
 function parseSMS(text){
-  const R=[];const blocks=text.split(/\n{2,}|\r\n{2,}/);const parts=blocks.length>1?blocks:[text];
-  for(const block of parts){const t=block.trim();if(!t)continue;let amount=null,merchant=null,dateStr=null;
-    const aP=[/(?:金额|人民币|消费|支出|扣款|交易金额|付款)[^\d]*?([\d,]+\.?\d*)\s*元?/i,/[¥￥]\s*([\d,]+\.?\d*)/,/RMB\s*([\d,]+\.?\d*)/i,/([\d,]+\.?\d*)\s*元/];
-    for(const p of aP){const m=t.match(p);if(m){const v=parseFloat(m[1].replace(/,/g,""));if(v>0&&v<1000000){amount=v;break;}}}
-    const mP=[/(?:在|于|向|至|商户|摘要|对方|收款方|付给)[：:\s]*([^\d\s,，。！\n]{2,20})/,/(?:交易|消费|支付|购买)[^\d]*?(?:在|于|向)[：:\s]*([^\d\s,，。\n]{2,20})/];
-    for(const p of mP){const m=t.match(p);if(m){merchant=m[1].trim().replace(/[，。、；]+$/,"");break;}}
-    if(!merchant){const fb=t.match(/(?:消费|支付|扣款|交易)[^\n]*?(?:于|在)\s*([^\d\s,，。]{2,15})/);if(fb)merchant=fb[1].trim();}
-    const dP=[/(\d{4})[年/\-.](\d{1,2})[月/\-.](\d{1,2})[日号]?/,/(\d{1,2})[月/](\d{1,2})[日号]?/];
-    for(const p of dP){const m=t.match(p);if(m){if(m.length>=4)dateStr=`${m[1]}-${m[2].padStart(2,"0")}-${m[3].padStart(2,"0")}`;else if(m.length>=3){dateStr=`${new Date().getFullYear()}-${m[1].padStart(2,"0")}-${m[2].padStart(2,"0")}`;}break;}}
-    if(amount)R.push({amount,merchant:merchant||"未知商户",date:dateStr||td(),category:autoCat(merchant||t),raw:t.slice(0,80)});
+  const R=[];
+  // Split by bank signature tags【...】or double newlines
+  const blocks=text.split(/(?<=【[^】]+】)\s*(?=\S)|(?<=元[。.]?\s*)\s*(?=【)|(?<=查明细\S+)\s+|\n{2,}|\r\n{2,}/);
+  const parts=blocks.length>1?blocks:[text];
+  for(const block of parts){
+    const t=block.trim();if(!t)continue;
+    // Skip income/入账 messages
+    if(/入账|存入|转入|收到|退款/.test(t)&&!/消费|支付|支取|扣款/.test(t))continue;
+    let amount=null,merchant=null,dateStr=null,currency="CNY";
+    // --- Currency & Amount ---
+    // NOK pattern: 消费NOK53.83元 or NOK 53.83
+    const nokMatch=t.match(/NOK\s*([\d,]+\.?\d*)\s*元?/i);
+    if(nokMatch){const v=parseFloat(nokMatch[1].replace(/,/g,""));if(v>0&&v<1000000){amount=v;currency="NOK";}}
+    // CNY patterns
+    if(!amount){
+      const aP=[
+        /(?:消费|支出|扣款|支取|付款|交易金额)[^\d]*?(?:人民币|RMB)?\s*([\d,]+\.?\d*)\s*元/i,
+        /(?:人民币|RMB)\s*([\d,]+\.?\d*)\s*元?/i,
+        /(?:金额|消费|支付)[^\d]*?([\d,]+\.?\d*)\s*元/i,
+        /[¥￥]\s*([\d,]+\.?\d*)/,
+        /([\d,]+\.?\d*)\s*元/,
+      ];
+      for(const p of aP){const m=t.match(p);if(m){const v=parseFloat(m[1].replace(/,/g,""));
+        // Skip if this looks like a balance amount (after 余额/可用额度)
+        const fullMatch=m[0];const idx=t.indexOf(fullMatch);
+        const before=t.slice(Math.max(0,idx-6),idx);
+        if(/余额|额度|可用/.test(before))continue;
+        if(v>0&&v<1000000){amount=v;break;}}}
+    }
+    // --- Merchant ---
+    // Pattern: 在JOKER消费 / 在星巴克消费 / 向美团外卖支付
+    const mP=[
+      /(?:在|于)\s*([A-Za-z\u4e00-\u9fff][A-Za-z0-9\u4e00-\u9fff\s·\-]{0,25}?)(?:消费|支付|扣款|刷卡)/,
+      /(?:向|至|付给)\s*([A-Za-z\u4e00-\u9fff][A-Za-z0-9\u4e00-\u9fff\s·\-]{0,25}?)(?:支付|消费|转账)/,
+      /(?:在|于)[：:\s]*([^\d\s,，。！\n]{2,20})/,
+      /(?:商户|摘要|对方|收款方)[：:\s]*([^\d\s,，。！\n]{2,20})/,
+      /网上支付支取/,
+    ];
+    for(const p of mP){const m=t.match(p);
+      if(m&&m[1]){merchant=m[1].trim().replace(/[，。、；\s]+$/,"");break;}}
+    // Fallback: if contains 网上支付 but no merchant
+    if(!merchant&&/网上支付/.test(t))merchant="网上支付";
+    // For Apple Pay / VISA etc, try to get the store name
+    if(!merchant){const fb=t.match(/(?:Pay|VISA|银联)[^\n]*?(?:在|于)\s*([A-Za-z\u4e00-\u9fff][A-Za-z0-9\u4e00-\u9fff\-\s]{1,20}?)(?:消费|支付)/);if(fb)merchant=fb[1].trim();}
+    // --- Date ---
+    const dP=[/(\d{4})[年/\-.](\d{1,2})[月/\-.](\d{1,2})[日号]?/,/(?:于|日期)?\s*(\d{1,2})[月/](\d{1,2})[日号]?/];
+    for(const p of dP){const m=t.match(p);if(m){
+      if(m.length>=4)dateStr=`${m[1]}-${m[2].padStart(2,"0")}-${m[3].padStart(2,"0")}`;
+      else if(m.length>=3){dateStr=`${new Date().getFullYear()}-${m[1].padStart(2,"0")}-${m[2].padStart(2,"0")}`;}
+      break;}}
+    if(amount)R.push({amount,merchant:merchant||"未知商户",date:dateStr||td(),category:autoCat(merchant||t),currency,raw:t.slice(0,100)});
   }return R;
 }
 
@@ -346,11 +387,11 @@ function vSMS(el,CM){
       ...S.smsParsed.map((r,i)=>{const c=CM[r.category]||CM.other||{icon:"📦",label:"其他"};const sel=S.smsSelected.has(i);
         return h("div",{className:"si"+(sel?" sel":""),onClick:()=>{const s=new Set(S.smsSelected);s.has(i)?s.delete(i):s.add(i);set({smsSelected:s})}},
           h("div",{className:"sc"},sel?"✓":""),h("span",{style:{fontSize:"20px",flexShrink:"0"}},c.icon),
-          h("div",{style:{flex:"1",minWidth:"0"}},h("div",{className:"ed"},r.merchant),h("div",{className:"em"},r.date+" · "+c.label)),
-          h("div",{className:"ea",style:{flexShrink:"0"}},"-¥"+fm(r.amount)))}),
+          h("div",{style:{flex:"1",minWidth:"0"}},h("div",{className:"ed"},r.merchant),h("div",{className:"em"},r.date+" · "+c.label,h("span",{className:"cb "+((r.currency||"CNY")==="NOK"?"cn":"cc")},r.currency||"CNY"))),
+          h("div",{className:"ea",style:{flexShrink:"0"}},"-"+fa(r.amount,r.currency||"CNY")))}),
       h("button",{className:"btn bs bw",style:{marginTop:"8px"},disabled:S.smsSelected.size===0,onClick:()=>{
         const ta=S.smsParsed.filter((_,i)=>S.smsSelected.has(i));
-        const nE=ta.map(r=>({id:uid(),desc:r.merchant,amount:r.amount,category:r.category,currency:"CNY",date:r.date,ts:Date.now()}));
+        const nE=ta.map(r=>({id:uid(),desc:r.merchant,amount:r.amount,category:r.category,currency:r.currency||"CNY",date:r.date,ts:Date.now()}));
         S.data.entries=[...nE,...S.data.entries];save();flash("✅ 已导入 "+nE.length+" 笔");set({smsText:"",smsParsed:[],smsSelected:new Set()})
       }},"📥 导入 "+S.smsSelected.size+" 笔记录")));
   }
@@ -537,4 +578,3 @@ render();
 </script>
 </body>
 </html>
-
