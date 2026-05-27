@@ -203,6 +203,99 @@ function viewAdd(el){
     )
   );
 }
+
+function toggleDetail(type,key){
+  if(S.statDetailType===type && S.statDetailKey===key){
+    S.statDetailType="";
+    S.statDetailKey="";
+  }else{
+    S.statDetailType=type;
+    S.statDetailKey=key;
+  }
+  render();
+}
+function detailOpen(type,key){
+  return S.statDetailType===type && S.statDetailKey===key;
+}
+function detailBox(title,entries){
+  const cm=catMap();
+  return h("div",{className:"detailbox"},
+    h("div",{className:"detail-title"},title," · ",entries.length," 笔"),
+    entries.length ? entries.map(e=>row(e,cm,true)) : h("div",{className:"empty"},"暂无明细")
+  );
+}
+function catSummary(el,entries,title="分类明细（CNY）",scope="catSummary"){
+  if(!entries.length)return;
+  const cm=catMap(), by={};
+  entries.forEach(e=>{ by[e.category]=(by[e.category]||0)+amountBase(e); });
+  const arr=Object.entries(by).sort((a,b)=>b[1]-a[1]);
+  const max=arr[0]?.[1] || 1;
+  el.appendChild(h("div",{className:"card"},
+    h("div",{className:"ct"},"📊",title),
+    h("div",{className:"mini",style:{marginBottom:"8px"}},"点分类可以展开明细，并且可以直接修改记录。"),
+    ...arr.map(([k,v])=>{
+      const c=cm[k]||cm.other;
+      const open=detailOpen(scope,k);
+      const items=entries.filter(e=>e.category===k);
+      return h("div",null,
+        h("div",{className:"barline clickable",style:{background:open?"#EEF7FC":"transparent",borderRadius:"10px",padding:"4px"},onClick:()=>toggleDetail(scope,k)},
+          h("div",{className:"barname"},c.icon," ",c.label),
+          h("div",{className:"mini-bar"},h("div",{className:"mini-fill",style:{width:(v/max*100)+"%",background:c.color}})),
+          h("div",{style:{fontSize:"12px",fontWeight:"800",minWidth:"76px",textAlign:"right"}},base(v))
+        ),
+        open ? detailBox(c.icon+" "+c.label,items) : null
+      );
+    })
+  ));
+}
+function catPie(el,entries,title="分类占比",scope="catPie"){
+  const es=expenseOnly(entries);
+  if(!es.length){
+    el.appendChild(h("div",{className:"card"},h("div",{className:"ct"},"🥧",title),h("div",{className:"empty"},"暂无支出数据")));
+    return;
+  }
+  const cm=catMap(), by={};
+  es.forEach(e=>{ by[e.category]=(by[e.category]||0)+amountBase(e); });
+  const arr=Object.entries(by).filter(x=>x[1]>0).sort((a,b)=>b[1]-a[1]);
+  const total=arr.reduce((s,x)=>s+x[1],0);
+  if(!total){
+    el.appendChild(h("div",{className:"card"},h("div",{className:"ct"},"🥧",title),h("div",{className:"empty"},"暂无支出数据")));
+    return;
+  }
+  let start=0;
+  const parts=arr.map(([k,v])=>{
+    const c=cm[k]||cm.other;
+    const deg=v/total*360;
+    const seg=`${c.color} ${start}deg ${start+deg}deg`;
+    start+=deg;
+    return seg;
+  }).join(",");
+  el.appendChild(h("div",{className:"card"},
+    h("div",{className:"ct"},"🥧",title),
+    h("div",{className:"mini",style:{marginBottom:"8px"}},"点下面的分类可以展开明细，并且可以直接修改记录。"),
+    h("div",{className:"pie-wrap"},
+      h("div",{className:"pie",style:{background:`conic-gradient(${parts})`}}),
+      h("div",{className:"pie-list"},
+        ...arr.map(([k,v])=>{
+          const c=cm[k]||cm.other;
+          const p=Math.round(v/total*100);
+          const open=detailOpen(scope,k);
+          const items=es.filter(e=>e.category===k);
+          return h("div",null,
+            h("div",{className:"pie-item clickable",style:{background:open?"#EEF7FC":"transparent",borderRadius:"10px",padding:"4px"},onClick:()=>toggleDetail(scope,k)},
+              h("span",{className:"pie-dot",style:{background:c.color}}),
+              h("span",null,c.icon," ",c.label),
+              h("span",{className:"pie-pct"},p+"%")
+            ),
+            open ? detailBox(c.icon+" "+c.label,items) : null
+          );
+        }),
+        h("div",{className:"pie-total"},"合计：",base(total),"。统计按折算人民币显示，退款后的净支出会计入占比。")
+      )
+    )
+  ));
+}
+
 function viewReport(el){el.appendChild(h("div",{className:"tabs"},...[['month','月统计'],['year','年统计'],['cat','分类'],['currency','币种']].map(x=>h("button",{className:"tab"+(S.reportTab===x[0]?" on":""),onClick:()=>set({reportTab:x[0]})},x[1])))); if(S.reportTab==="month")reportMonth(el); if(S.reportTab==="year")reportYear(el); if(S.reportTab==="cat")reportCat(el); if(S.reportTab==="currency")reportCurrency(el)}
 function reportMonth(el){const [y,m]=S.reportMonth.split('-').map(Number), prev=m===1?`${y-1}-12`:`${y}-${String(m-1).padStart(2,'0')}`, next=m===12?`${y+1}-01`:`${y}-${String(m+1).padStart(2,'0')}`; const all=monthEntries(), es=expenseOnly(all), inc=sumBase(incomeOnly(all)), total=sumBase(es), byCur=curTotals(es); el.appendChild(h("div",{className:"card"},h("div",{className:"seg"},h("button",{className:"btn",onClick:()=>set({reportMonth:prev})},"‹"),h("button",{className:"btn",style:{flex:2}},S.reportMonth),h("button",{className:"btn",onClick:()=>set({reportMonth:next})},"›")),gap(12),h("div",{className:"grid2"},stat("本月支出",base(total),"var(--red)"),stat("笔数",String(es.length)),stat("本月收入",base(inc),"var(--green)"),stat("预算剩余",base(S.data.budget-total),S.data.budget-total>=0?"var(--green)":"var(--red)")))); monthSummary(el,all,S.reportMonth); dailyChart(el,es); catSummary(el,es,"本月分类明细（CNY）","monthCat"); recent(el,es.slice(0,8),"本月明细")}
 function dailyChart(el,es){
